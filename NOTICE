@@ -1,0 +1,40 @@
+KeepForge
+Copyright (c) 2026 Zheer Khalid (https://zheer.dev)
+Licensed under the MIT License (see LICENSE).
+
+Third-party material
+--------------------
+
+EFF Large Wordlist for Passphrases
+  KeepForge embeds the "EFF Large Wordlist for Passphrases" (7,776 words) to
+  generate passphrases and readable user names (res/eff_large_wordlist.txt;
+  the dice numbers of the original file were removed, the words are unchanged).
+  Copyright Electronic Frontier Foundation.
+  https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases
+  Licensed under the Creative Commons Attribution 3.0 United States License
+  (CC BY 3.0 US): https://creativecommons.org/licenses/by/3.0/us/
+
+Rust crates
+  KeepForge is built with open-source Rust crates, among them the RustCrypto
+  crates (argon2, chacha20poly1305, hkdf, hmac, sha2, sha1, blake2, subtle,
+  zeroize), zxcvbn, ciborium, serde, qrcode, eframe / egui, image, rfd and the
+  windows crate. Each is used under its own licence (MIT and/or Apache-2.0 for
+  most); see Cargo.lock for the exact versions and each crate for its terms.
+
+Fonts
+  KeepForge loads the Segoe UI and Segoe MDL2 Assets fonts that are installed
+  with Windows at run time. They are not distributed with KeepForge.
+
+Optional online services (used only when you start a check)
+----------------------------------------------------------
+
+Pwned Passwords range API by Have I Been Pwned
+  https://haveibeenpwned.com/Passwords
+
+XposedOrNot breach data API
+  https://xposedornot.com  (API documentation: https://xposedornot.com/api_doc)
+
+iknowwhatyoudownload.com Peer API (needs your own key from the service)
+  https://iknowwhatyoudownload.com/en/api/
+
+KeepForge is not affiliated with or endorsed by any of these services.
