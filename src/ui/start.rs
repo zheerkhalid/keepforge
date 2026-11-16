@@ -9,8 +9,8 @@ use crate::store::{OpenError, OpenVault};
 use crate::strength::{self, Strength};
 use crate::vaultfile::{self, Credentials, VaultError};
 use eframe::egui::{
-    self, vec2, Align, Color32, CornerRadius, Frame, Key, Layout, Margin, Rect, RichText, Sense,
-    Stroke, TextureHandle, Ui,
+    self, vec2, Color32, CornerRadius, Frame, Key, Margin, Rect, RichText, Sense, Stroke,
+    TextureHandle, Ui,
 };
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -1006,7 +1006,7 @@ impl UnlockState {
                             }
                         }
                         ui.add_space(6.0);
-                        ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                        ui.vertical_centered(|ui| {
                             if !self.busy && widgets::link(ui, "Open another vault").clicked() {
                                 go = Some(Go::Welcome);
                             }

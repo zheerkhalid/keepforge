@@ -42,6 +42,8 @@ pub enum KeyFileChoice {
 }
 
 pub struct ChangePw {
+    current: SecretInput,
+    current_key: Option<PathBuf>,
     password: SecretInput,
     confirm: SecretInput,
     show: bool,
@@ -125,6 +127,8 @@ impl Dialog {
 
     pub fn change_password(current: KdfParams) -> Dialog {
         Dialog::ChangePassword(Box::new(ChangePw {
+            current: SecretInput::new(),
+            current_key: None,
             password: SecretInput::new(),
             confirm: SecretInput::new(),
             show: false,
@@ -200,6 +204,17 @@ pub const QR_SECONDS: f64 = 30.0;
 fn title(ui: &mut Ui, text: &str) {
     ui.label(RichText::new(text).font(semibold(19.0)));
     ui.add_space(2.0);
+}
+
+/// A right-aligned row of dialog buttons with a fixed height. A bare
+/// right-to-left layout takes all the height the modal may use, which makes
+/// the dialog as tall as the window and pushes its text out of view.
+fn button_row(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), 36.0),
+        Layout::right_to_left(Align::Center),
+        add,
+    );
 }
 
 fn para(ui: &mut Ui, text: &str) {
@@ -290,7 +305,10 @@ impl Main {
             Err(e) => {
                 if let Some(Dialog::ChangePassword(d)) = &mut self.dialog {
                     d.busy = false;
-                    d.error = Some(e.to_string());
+                    d.error = Some(match e {
+                        VaultError::Internal(text) => text,
+                        other => other.to_string(),
+                    });
                 }
             }
         }
@@ -444,7 +462,9 @@ impl Main {
         // A dialog may replace itself with another one.
         let mut next: Option<Dialog> = None;
         let mut confirmed = false;
-        let modal = egui::Modal::new(egui::Id::new("dialog"))
+        // One id per kind of dialog: a modal keeps the size it had last time,
+        // so dialogs sharing an id would inherit each other's size.
+        let modal = egui::Modal::new(egui::Id::new("dialog").with(std::mem::discriminant(&dialog)))
             .frame(widgets::modal_frame(ctx))
             .show(ctx, |ui| match &mut dialog {
                 Dialog::Confirm {
@@ -459,7 +479,7 @@ impl Main {
                     para(ui, text);
                     ui.add_space(12.0);
                     let mut yes = false;
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    button_row(ui, |ui| {
                         yes = if *danger {
                             widgets::danger_button(ui, button, true).clicked()
                         } else {
@@ -481,7 +501,7 @@ impl Main {
                     ui.add_space(4.0);
                     para(ui, "KeepForge never writes the password into the sheet. It holds the vault's name and file location, today's date, and a blank line for you to fill in.");
                     ui.add_space(12.0);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    button_row(ui, |ui| {
                         if widgets::primary_button(ui, "Save the sheet…", true).clicked() {
                             self.save_emergency_sheet(sh);
                             close = true;
@@ -499,7 +519,7 @@ impl Main {
                     resp.request_focus();
                     ui.add_space(12.0);
                     let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    button_row(ui, |ui| {
                         let ok = widgets::primary_button(ui, "Save", !name.trim().is_empty()).clicked();
                         if (ok || enter) && !name.trim().is_empty() {
                             match id {
@@ -656,7 +676,7 @@ impl Main {
                         }
                     });
                     ui.add_space(8.0);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    button_row(ui, |ui| {
                         if widgets::primary_button(ui, "Close", true).clicked() {
                             close = true;
                         }
@@ -668,7 +688,21 @@ impl Main {
                     title(ui, "Master password and protection");
                     para(ui, "Set the master password, the key-stretching strength and the key file this vault uses from now on. The whole vault is encrypted again with new keys.");
                     ui.add_space(6.0);
-                    widgets::caption(ui, "Master password (type the current one to keep it)");
+                    widgets::caption(ui, "Current master password");
+                    widgets::secret_input(ui, &mut d.current, d.show, "", 520.0);
+                    if self.v.sealer.key_file {
+                        ui.horizontal(|ui| {
+                            let label = d.current_key.as_ref().map(|k| k.to_string_lossy().to_string()).unwrap_or_else(|| "Current key file: not chosen".into());
+                            ui.add_sized(vec2(360.0, 22.0), egui::Label::new(RichText::new(label).color(p.muted)).truncate());
+                            if widgets::ghost_button(ui, "Choose…").clicked() {
+                                if let Some(k) = rfd::FileDialog::new().set_title("Choose the current key file").pick_file() {
+                                    d.current_key = Some(k);
+                                }
+                            }
+                        });
+                    }
+                    ui.add_space(6.0);
+                    widgets::caption(ui, "New master password (type the current one again to keep it)");
                     ui.horizontal(|ui| {
                         widgets::secret_input(ui, &mut d.password, d.show, "", 476.0);
                         let icon = if d.show { Icon::HIDE } else { Icon::VIEW };
@@ -746,9 +780,11 @@ impl Main {
                     let ready = refusal.is_none()
                         && matches
                         && !d.busy
+                        && !d.current.is_empty()
+                        && (!self.v.sealer.key_file || d.current_key.is_some())
                         && (d.key_choice == KeyFileChoice::None || d.key_path.is_some());
                     let mut apply = false;
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    button_row(ui, |ui| {
                         if d.busy {
                             ui.label("Encrypting the vault again…");
                             ui.add(egui::Spinner::new().size(20.0).color(p.accent));
@@ -768,6 +804,13 @@ impl Main {
                                 password: d.password.to_secret(),
                                 key_file: None,
                             };
+                            let mut old = Credentials {
+                                password: d.current.to_secret(),
+                                key_file: None,
+                            };
+                            let old_key = d.current_key.clone();
+                            let current = self.v.sealer.share();
+                            d.current.wipe();
                             d.password.wipe();
                             d.confirm.wipe();
                             d.strength.clear();
@@ -781,6 +824,31 @@ impl Main {
                             .clamped();
                             let (choice, key_path) = (d.key_choice, d.key_path.clone());
                             sh.spawn(ui.ctx(), move || {
+                                // The current password (and key file) must be right first.
+                                let known = match old_key {
+                                    Some(path) => super::start::read_key_file(&path).map(|k| {
+                                        old.key_file = Some(k);
+                                    }),
+                                    None => Ok(()),
+                                }
+                                .and_then(|()| current.matches(&mut old).map_err(|e| e.to_string()));
+                                old.wipe();
+                                match known {
+                                    Ok(true) => {}
+                                    Ok(false) => {
+                                        creds.wipe();
+                                        let what = if current.key_file {
+                                            "The current master password or key file is not right. Nothing was changed."
+                                        } else {
+                                            "The current master password is not right. Nothing was changed."
+                                        };
+                                        return Msg::NewSealer(Err(VaultError::Internal(what.into())), 0.0);
+                                    }
+                                    Err(e) => {
+                                        creds.wipe();
+                                        return Msg::NewSealer(Err(VaultError::Internal(e)), 0.0);
+                                    }
+                                }
                                 let start = std::time::Instant::now();
                                 let key = match (choice, key_path) {
                                     (KeyFileChoice::New, Some(path)) => {
@@ -866,7 +934,7 @@ impl Main {
                     });
                     widgets::note(ui, "CSV opens in spreadsheets and other managers. JSON keeps everything (custom fields, history, recovery codes). Attachments are not exported.");
                     ui.add_space(10.0);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    button_row(ui, |ui| {
                         if widgets::ghost_button(ui, "Close").clicked() {
                             close = true;
                         }
@@ -979,7 +1047,7 @@ impl Main {
                         ui.add_space(10.0);
                         let count = if d.skip_duplicates { total - dup } else { total };
                         let mut do_import = false;
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        button_row(ui, |ui| {
                             do_import = widgets::primary_button(ui, &format!("Import {count} entries"), count > 0).clicked();
                             if widgets::ghost_button(ui, "Cancel").clicked() {
                                 close = true;
@@ -1049,7 +1117,7 @@ impl Main {
                     widgets::checkbox(ui, dont_ask, "Don't ask again for this kind of lookup");
                     ui.add_space(10.0);
                     let mut proceed = false;
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    button_row(ui, |ui| {
                         proceed = widgets::primary_button(ui, "Continue", true).clicked();
                         if widgets::ghost_button(ui, "Cancel").clicked() {
                             close = true;
@@ -1149,5 +1217,53 @@ impl Main {
             }
             Err(e) => sh.toast(format!("Could not save the sheet: {e}"), true),
         }
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    /// Height of a modal after a few frames with the given content.
+    fn modal_height(ctx: &egui::Context, id: &str, tall: bool, fill: bool) -> f32 {
+        let mut height = 0.0;
+        for _ in 0..4 {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                let shown = egui::Modal::new(egui::Id::new(id)).show(ctx, |ui| {
+                    ui.set_width(300.0);
+                    ui.label("Text");
+                    if tall {
+                        ui.add_space(400.0);
+                    }
+                    if fill {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let _ = ui.button("OK");
+                        });
+                    } else {
+                        button_row(ui, |ui| {
+                            let _ = ui.button("OK");
+                        });
+                    }
+                });
+                height = shown.response.rect.height();
+            });
+        }
+        height
+    }
+
+    #[test]
+    fn a_short_dialog_after_a_tall_one_stays_short() {
+        // The fault this guards against: a bare right-to-left row fills the
+        // height the modal had last time, leaving a large empty panel.
+        let ctx = egui::Context::default();
+        modal_height(&ctx, "old", true, true);
+        assert!(
+            modal_height(&ctx, "old", false, true) > 300.0,
+            "the fault no longer reproduces"
+        );
+
+        let ctx = egui::Context::default();
+        modal_height(&ctx, "new", true, false);
+        assert!(modal_height(&ctx, "new", false, false) < 150.0);
     }
 }

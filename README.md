@@ -22,7 +22,7 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
   <img alt="Offline" src="https://img.shields.io/badge/works-fully%20offline-10C98F?style=flat-square" />
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-10C98F?style=flat-square&logo=shield&logoColor=white" />
   <img alt="Setup and portable" src="https://img.shields.io/badge/setup%20%2B%20portable-no%20runtimes-10C98F?style=flat-square" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-79%20passing-10C98F?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-80%20passing-10C98F?style=flat-square" />
   <img alt="Made by Zheer Khalid" src="https://img.shields.io/badge/made%20by-Zheer%20Khalid-FF5A4E?style=flat-square" />
 </p>
 

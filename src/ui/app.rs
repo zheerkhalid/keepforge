@@ -210,7 +210,9 @@ impl Shared {
     }
 
     fn apply_capture_protection(&mut self) {
-        let want = self.settings.hide_from_capture && !self.shot;
+        let want = self.settings.hide_from_capture
+            && !self.shot
+            && !(self.demo && std::env::var_os("KEEPFORGE_DEMO_ALLOW_CAPTURE").is_some());
         if self.capture_applied == Some(want) || self.hwnd == 0 {
             return;
         }
@@ -564,12 +566,21 @@ impl App {
         let Some(shot) = &mut self.shot else { return };
         ctx.request_repaint();
         shot.frames += 1;
+        // KEEPFORGE_SHOT_SCALE renders as a scaled display would (2 = 200 %),
+        // to check layouts in the small logical window that gives.
+        let scale = std::env::var("KEEPFORGE_SHOT_SCALE")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| (0.5..=4.0).contains(v))
+            .unwrap_or(1.0);
         if shot.frames == 1 {
-            ctx.set_pixels_per_point(1.0);
+            ctx.set_pixels_per_point(scale);
         }
         if shot.frames == 3 {
-            // Now that one point is one pixel, this gives an exact 1280 x 800 image.
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(vec2(1280.0, 800.0)));
+            // With one point per pixel this gives an exact 1280 x 800 image.
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(
+                vec2(1280.0, 800.0) / scale,
+            ));
         }
         let image = ctx.input(|i| {
             i.events.iter().find_map(|e| match e {

@@ -108,9 +108,11 @@ What cannot be done, and you should know:
 - The wait after wrong password attempts on the lock screen is a courtesy
   against someone typing guesses at your keyboard. It does nothing against
   an attacker who has the file; Argon2id is what slows them down.
-- Changing the master password does not ask for the old one: anyone at an
-  unlocked KeepForge can already read and export everything. Lock the vault
-  when you leave. Backups made earlier still open with the old password.
+- Changing the master password, key file or key stretching asks for the
+  current master password (and key file) first. This stops someone at an
+  unlocked KeepForge from locking you out; they can still read and export
+  what is open, so lock the vault when you leave. Backups made earlier
+  still open with the old password.
 - "Block dynamically generated code" is off by default because some graphics
   drivers need to generate code. If a start does not get as far as drawing
   the window, the next start runs in compatibility mode (no library-path

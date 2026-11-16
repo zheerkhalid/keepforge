@@ -603,6 +603,21 @@ impl Sealer {
         })
     }
 
+    /// Whether these credentials are the ones this vault is open with: runs
+    /// the KDF with the vault's own salt and settings and compares the result
+    /// in constant time. The password inside `creds` is wiped.
+    pub fn matches(&self, creds: &mut Credentials) -> Result<bool, VaultError> {
+        use subtle::ConstantTimeEq;
+        if creds.key_file.is_some() != self.key_file {
+            creds.wipe();
+            return Ok(false);
+        }
+        let keys = derive_keys(creds, &self.kdf, &self.salt)?;
+        Ok(bool::from(
+            keys.enc.as_slice().ct_eq(self.keys.enc.as_slice()),
+        ))
+    }
+
     pub fn share(&self) -> Sealer {
         Sealer {
             keys: self.keys.clone(),

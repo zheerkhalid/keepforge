@@ -621,6 +621,12 @@ mod tests {
         v.vault.items.push(item);
         v.add_attachment(id, "a", b"abc");
         v.save_now(2).unwrap();
+        // The check the change-password dialog makes first.
+        assert!(v.sealer.matches(&mut creds("old")).unwrap());
+        assert!(!v.sealer.matches(&mut creds("wrong")).unwrap());
+        let mut with_key = creds("old");
+        with_key.key_file = Some(zeroize::Zeroizing::new([7u8; 32]));
+        assert!(!v.sealer.matches(&mut with_key).unwrap());
         let salt = v.sealer.salt;
         let stronger = KdfParams { t: 3, ..TEST_KDF };
         v.change_credentials(&mut creds("new"), stronger).unwrap();

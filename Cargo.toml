@@ -1,6 +1,6 @@
 [package]
 name = "keepforge"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 description = "An offline password manager for Windows: one encrypted vault file, no account, no cloud"
 authors = ["Zheer Khalid (https://zheer.dev)"]

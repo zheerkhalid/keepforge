@@ -74,6 +74,17 @@ pub fn initial_screen(view: &str, sh: &mut Shared) -> Screen {
             main.demo_online_results();
             main.pages.email_input = crate::demo::DEMO_EMAIL.into();
         }
+        "dialog-online" => {
+            main.nav = Nav::Breach;
+            main.dialog = Some(super::dialogs::Dialog::Online(
+                super::dialogs::Online::Emails(vec![crate::demo::DEMO_EMAIL.into()]),
+                false,
+            ));
+        }
+        "dialog-password" => {
+            main.nav = Nav::Settings;
+            main.dialog = Some(super::dialogs::Dialog::change_password(main.v.sealer.kdf));
+        }
         "authenticator" => main.nav = Nav::Authenticator,
         "settings" => main.nav = Nav::Settings,
         "trash" => main.nav = Nav::Trash,
