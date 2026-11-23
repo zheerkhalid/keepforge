@@ -1,5 +1,6 @@
 //! The egui user interface.
 mod app;
+mod bidi;
 mod demo_views;
 mod detail;
 mod dialogs;

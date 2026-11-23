@@ -902,8 +902,11 @@ impl UnlockState {
                         ui.vertical_centered(|ui| {
                             paint_logo(ui, logo, 64.0);
                             ui.add_space(6.0);
-                            ui.label(RichText::new(&self.name).font(semibold(22.0)));
+                            widgets::line_label(ui, &self.name, semibold(22.0), p.text);
                             ui.label(RichText::new(Icon::LOCK.with("Locked")).color(p.muted));
+                            if let Some(note) = &sh.lock_note {
+                                ui.label(RichText::new(note).size(12.5).color(p.faint));
+                            }
                         });
                         ui.add_space(12.0);
                         if let Some(problem) = &self.file_problem {

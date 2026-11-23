@@ -444,6 +444,19 @@ impl Vault {
         before - self.items.len()
     }
 
+    /// Removes items that have been in the trash for `days` days or more.
+    /// With `days == 0` nothing is removed. Returns how many items went.
+    pub fn purge_trash(&mut self, now: i64, days: u32) -> usize {
+        if days == 0 {
+            return 0;
+        }
+        let limit = now - i64::from(days) * util::DAY;
+        let before = self.items.len();
+        self.items
+            .retain(|i| !matches!(i.deleted, Some(when) if when <= limit));
+        before - self.items.len()
+    }
+
     /// Copies an item (new id, "(copy)" title, no history). Returns the new id.
     pub fn duplicate(&mut self, id: Id, now: i64) -> Option<Id> {
         let mut copy = self.item(id)?.clone();
@@ -560,6 +573,32 @@ mod tests {
         let f = v.folder_id("Personal").unwrap();
         assert_eq!(v.folder_id("personal"), Some(f));
         assert_eq!(v.folder_name(Some(f)), Some("Personal"));
+    }
+
+    #[test]
+    fn old_trash_is_purged_only_when_asked() {
+        let day = util::DAY;
+        let now = 1000 * day;
+        let mut v = Vault::new("Test", 1);
+        for (title, deleted) in [
+            ("live", None),
+            ("fresh", Some(now - 2 * day)),
+            ("edge", Some(now - 30 * day)),
+            ("old", Some(now - 90 * day)),
+        ] {
+            let mut i = Item::new(Kind::Login, 1);
+            i.title = title.into();
+            i.deleted = deleted;
+            v.items.push(i);
+        }
+        assert_eq!(v.purge_trash(now, 0), 0, "0 days means never");
+        assert_eq!(v.items.len(), 4);
+        assert_eq!(v.purge_trash(now, 365), 0);
+        assert_eq!(v.purge_trash(now, 30), 2);
+        let left: Vec<&str> = v.items.iter().map(|i| i.title.as_str()).collect();
+        assert_eq!(left, vec!["live", "fresh"]);
+        // A clock that jumped back never deletes anything.
+        assert_eq!(v.purge_trash(now - 500 * day, 30), 0);
     }
 
     #[test]

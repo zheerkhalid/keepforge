@@ -24,6 +24,8 @@ pub struct Report {
     pub empty: Vec<Id>,
     /// Logins without a web address.
     pub no_url: Vec<Id>,
+    /// Logins whose password goes to a web address without encryption.
+    pub insecure: Vec<Id>,
     /// (item, expiry) within the next 30 days.
     pub expiring: Vec<(Id, i64)>,
     /// (item, expiry) already past.
@@ -33,6 +35,55 @@ pub struct Report {
 }
 
 pub const EXPIRY_WINDOW_DAYS: i64 = 30;
+
+/// Whether a web address sends what is typed into it without encryption:
+/// a plain `http://` address on the internet. Devices at home (a router or
+/// printer page, `localhost`, private addresses) are left alone, because
+/// they often offer nothing else and never leave the local network.
+pub fn is_insecure_url(url: &str) -> bool {
+    let url = url.trim();
+    let Some(scheme) = url.get(..7) else {
+        return false;
+    };
+    if !scheme.eq_ignore_ascii_case("http://") {
+        return false;
+    }
+    let rest = &url[7..];
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.rsplit('@').next().unwrap_or("");
+    if let Some(inner) = host.strip_prefix('[') {
+        // An IPv6 literal: loopback, link-local and unique-local stay home.
+        let inner = inner.split(']').next().unwrap_or("").to_ascii_lowercase();
+        return !(inner == "::1"
+            || inner.starts_with("fe80:")
+            || inner.starts_with("fc")
+            || inner.starts_with("fd"));
+    }
+    let host = host.split(':').next().unwrap_or("").to_ascii_lowercase();
+    if host.is_empty() {
+        return false;
+    }
+    let octets: Vec<u8> = host.split('.').filter_map(|p| p.parse().ok()).collect();
+    if octets.len() == 4 && host.split('.').count() == 4 {
+        return !matches!(
+            (octets[0], octets[1]),
+            (10, _) | (127, _) | (192, 168) | (169, 254) | (172, 16..=31)
+        );
+    }
+    let local = host == "localhost"
+        || !host.contains('.')
+        || [
+            ".local",
+            ".lan",
+            ".home",
+            ".internal",
+            ".localhost",
+            ".home.arpa",
+        ]
+        .iter()
+        .any(|s| host.ends_with(s));
+    !local
+}
 
 /// Whether an item's password is one a person chose (and so can be weak).
 fn has_chosen_password(item: &Item) -> bool {
@@ -71,6 +122,9 @@ pub fn analyse(
             }
             if item.urls.iter().all(|u| u.trim().is_empty()) {
                 report.no_url.push(item.id);
+            }
+            if !item.password.is_empty() && item.urls.iter().any(|u| is_insecure_url(u)) {
+                report.insecure.push(item.id);
             }
         }
         if !has_chosen_password(item) || item.password.is_empty() {
@@ -201,6 +255,7 @@ mod tests {
         assert_eq!(r.old, vec![ids[2]]);
         assert_eq!(r.empty, vec![ids[4]]);
         assert_eq!(r.no_url, vec![ids[4]]);
+        assert!(r.insecure.is_empty());
         assert_eq!(r.expiring, vec![(ids[6], now + 10 * DAY)]);
         assert_eq!(r.expired, vec![(ids[7], now - DAY)]);
         assert!(!r.cancelled);
@@ -216,5 +271,60 @@ mod tests {
         assert_eq!(score_label(10), "At risk");
         assert!(kdf_words(1.23).starts_with("Strong: about 1.2 s"));
         assert!(kdf_words(0.05).starts_with("Light"));
+    }
+
+    #[test]
+    fn plain_http_addresses_are_listed_but_home_devices_are_not() {
+        for url in [
+            "http://forum.example/login",
+            "HTTP://Shop.Example",
+            "http://user@forum.example:8080/a?b#c",
+            "http://93.184.216.34/admin",
+            "http://172.32.0.1",
+            "http://[2001:db8::1]:8080/",
+            "  http://forum.example ",
+        ] {
+            assert!(is_insecure_url(url), "{url}");
+        }
+        for url in [
+            "https://forum.example",
+            "forum.example",
+            "",
+            "http://",
+            "http",
+            "ftp://files.example",
+            "http://localhost:3000",
+            "http://192.168.1.1/",
+            "http://10.0.0.138",
+            "http://172.16.4.2",
+            "http://127.0.0.1:8384",
+            "http://169.254.10.10",
+            "http://router",
+            "http://printer.local/status",
+            "http://nas.lan",
+            "http://[::1]:8080",
+            "http://[fe80::1]",
+            "http://[fd12:3456::1]/",
+            "بانک",
+        ] {
+            assert!(!is_insecure_url(url), "{url}");
+        }
+        let s = SessionKey::new();
+        let mut v = Vault::new("h", 0);
+        let mut a = login(&s, "a", "vK7#qPz!m2Lx9@Tn", 5);
+        a.urls = vec!["https://a.example".into(), "http://a.example/old".into()];
+        v.items.push(a);
+        let mut b = login(&s, "b", "", 5);
+        b.urls = vec!["http://b.example".into()];
+        v.items.push(b);
+        let mut c = login(&s, "c", "wT4$hNc^8RbY1&Ue", 5);
+        c.urls = vec!["http://192.168.0.1".into()];
+        v.items.push(c);
+        let r = analyse(&v.items, 12, 10, &AtomicBool::new(false), |_, _| {});
+        assert_eq!(
+            r.insecure,
+            vec![v.items[0].id],
+            "only a saved password counts"
+        );
     }
 }

@@ -1,5 +1,6 @@
 //! Small reusable pieces of UI.
 
+use super::bidi;
 use super::theme::{pal, regular, semibold, Icon, Palette};
 use eframe::egui::{
     self, pos2, text::LayoutJob, text::TextWrapping, vec2, Align2, Color32, CornerRadius, FontId,
@@ -90,6 +91,23 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, tooltip: &str) -> Response {
 /// A small pill label.
 pub fn badge(ui: &mut Ui, text: &str, color: Color32) -> Response {
     let font = semibold(11.5);
+    if bidi::needs_native(text) {
+        if let Some(size) = bidi::measure(ui, text, font.size, true) {
+            let (rect, resp) = ui.allocate_exact_size(vec2(size.x + 14.0, 20.0), Sense::hover());
+            ui.painter()
+                .rect_filled(rect, CornerRadius::same(10), color.gamma_multiply(0.16));
+            bidi::paint(
+                ui,
+                rect.shrink2(vec2(7.0, 0.0)),
+                text,
+                font.size,
+                true,
+                color,
+                false,
+            );
+            return resp;
+        }
+    }
     let galley = ui.painter().layout_no_wrap(text.to_string(), font, color);
     let size = vec2(galley.size().x + 14.0, 20.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
@@ -291,6 +309,34 @@ pub fn chip(ui: &mut Ui, label: &str, count: Option<usize>, active: bool) -> Res
     ui.add(b)
 }
 
+fn is_bold(font: &FontId) -> bool {
+    matches!(&font.family, egui::FontFamily::Name(name) if name.as_ref() == "semibold")
+}
+
+/// A one-line label that truncates. Kurdish, Arabic and other right-to-left
+/// text is drawn joined up and in reading order.
+pub fn line_label(ui: &mut Ui, text: &str, font: FontId, color: Color32) -> Response {
+    if let Some(resp) = bidi::label(ui, text, font.size, is_bold(&font), color) {
+        return resp;
+    }
+    ui.add(egui::Label::new(RichText::new(text).font(font).color(color)).truncate())
+}
+
+/// A wrapped label. `secret`: the text is a revealed secret (nothing of it
+/// is kept once it is hidden again).
+pub fn wrapped_label(
+    ui: &mut Ui,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    secret: bool,
+) -> Response {
+    if let Some(resp) = bidi::paragraph(ui, text, font.size, color, secret) {
+        return resp;
+    }
+    ui.add(egui::Label::new(RichText::new(text).font(font).color(color)).wrap())
+}
+
 /// Lays out one line of text, cut off with an ellipsis at `max_width`.
 pub fn elided(
     ui: &Ui,
@@ -311,6 +357,11 @@ pub fn elided(
 
 /// Paints one elided line, vertically centred in `rect`. Returns whether it was cut.
 pub fn text_in(ui: &Ui, rect: Rect, text: &str, font: FontId, color: Color32) -> bool {
+    if bidi::needs_native(text) {
+        if let Some(cut) = bidi::paint(ui, rect, text, font.size, is_bold(&font), color, false) {
+            return cut;
+        }
+    }
     let galley = elided(ui, text, font, color, rect.width());
     let cut = galley.elided;
     ui.painter().galley(
@@ -323,6 +374,11 @@ pub fn text_in(ui: &Ui, rect: Rect, text: &str, font: FontId, color: Color32) ->
 
 /// Like [`text_in`], right-aligned.
 pub fn text_in_right(ui: &Ui, rect: Rect, text: &str, font: FontId, color: Color32) {
+    if bidi::needs_native(text)
+        && bidi::paint(ui, rect, text, font.size, is_bold(&font), color, true).is_some()
+    {
+        return;
+    }
     let galley = elided(ui, text, font, color, rect.width());
     ui.painter().galley(
         pos2(
@@ -599,6 +655,9 @@ pub fn link(ui: &mut Ui, text: &str) -> Response {
 /// A wrapped paragraph in the muted colour.
 pub fn note(ui: &mut Ui, text: &str) {
     let p = pal(ui);
+    if bidi::paragraph(ui, text, 13.0, p.muted, false).is_some() {
+        return;
+    }
     ui.add(egui::Label::new(RichText::new(text).size(13.0).color(p.muted)).wrap());
 }
 

@@ -121,6 +121,9 @@ pub struct Shared {
     pub sys: Option<SysWindow>,
     capture_applied: Option<bool>,
     pub idle_lock_secs: Option<u64>,
+    /// Why the vault locked itself, shown on the lock screen until the next
+    /// unlock (a toast would be gone before anyone is back to read it).
+    pub lock_note: Option<String>,
 }
 
 impl Shared {
@@ -244,6 +247,16 @@ pub struct App {
     start_minimised: bool,
 }
 
+/// The line on the lock screen after an automatic lock.
+pub fn idle_note(idle_secs: u64) -> String {
+    let span = match idle_secs {
+        0..=89 => format!("{idle_secs} seconds"),
+        s if s < 5400 => format!("{} minutes", (s + 30) / 60),
+        s => format!("{} hours", (s + 1800) / 3600),
+    };
+    format!("Locked after {span} without activity.")
+}
+
 /// Starts the window.
 pub fn run(options: Options, icon: egui::IconData) -> eframe::Result<()> {
     let viewport = egui::ViewportBuilder::default()
@@ -338,6 +351,7 @@ impl App {
             sys,
             capture_applied: None,
             idle_lock_secs: options.idle_lock_secs,
+            lock_note: None,
         };
         sh.apply_capture_protection();
         if !options.strict {
@@ -389,6 +403,8 @@ impl App {
     /// Drops every piece of UI state that could hold vault data.
     fn wipe_ui(&mut self, ctx: &egui::Context) {
         self.sh.clear_clipboard();
+        // Bitmaps of right-to-left text drawn by Windows.
+        super::bidi::clear();
         // Text-edit state (cursor, undo history), scroll positions, etc.
         ctx.memory_mut(|m| m.data.clear());
     }
@@ -415,7 +431,9 @@ impl App {
                         .settings
                         .remember(path, &vault.vault.name, None, self.sh.now);
                 }
+                self.sh.lock_note = None;
                 let mut main = Main::new(vault, kdf_secs);
+                main.purge_old_trash(ctx, &mut self.sh);
                 if fresh {
                     main.offer_emergency_sheet();
                 }
@@ -503,6 +521,8 @@ impl App {
             match event {
                 SysEvent::SessionLocked | SysEvent::Suspending => {
                     if self.sh.settings.lock_on_session && matches!(self.screen, Screen::Main(_)) {
+                        self.sh.lock_note =
+                            Some("Locked because Windows was locked or went to sleep.".into());
                         self.go(ctx, Go::Lock);
                     }
                 }
@@ -552,12 +572,12 @@ impl App {
             None => u64::from(self.sh.settings.auto_lock_minutes) * 60,
         };
         if limit > 0 && crate::sys::idle_seconds() >= limit {
-            self.sh
-                .toast("Locked after a period without activity.", false);
+            self.sh.lock_note = Some(idle_note(limit));
             self.go(ctx, Go::Lock);
             return;
         }
         if just_minimized && self.sh.settings.lock_on_minimize {
+            self.sh.lock_note = Some("Locked because the window was minimised.".into());
             self.go(ctx, Go::Lock);
         }
     }
@@ -790,6 +810,7 @@ impl eframe::App for App {
         self.about_dialog(ctx);
         self.toasts_ui(ctx);
         self.handle_output(ctx);
+        super::bidi::end_frame(ctx);
 
         // Settings changed this frame: save them and apply the ones with
         // an effect outside the window.
@@ -860,5 +881,20 @@ impl eframe::App for App {
         if let Some(marker) = self.start_marker.take() {
             let _ = std::fs::remove_file(marker);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::idle_note;
+
+    #[test]
+    fn the_lock_note_names_the_idle_time() {
+        assert_eq!(idle_note(30), "Locked after 30 seconds without activity.");
+        assert_eq!(idle_note(60), "Locked after 60 seconds without activity.");
+        assert_eq!(idle_note(300), "Locked after 5 minutes without activity.");
+        assert_eq!(idle_note(3600), "Locked after 60 minutes without activity.");
+        assert_eq!(idle_note(7200), "Locked after 2 hours without activity.");
+        assert_eq!(idle_note(86_400), "Locked after 24 hours without activity.");
     }
 }

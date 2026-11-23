@@ -4,7 +4,7 @@
 use super::app::Shared;
 use super::dialogs::{ConfirmAction, Dialog};
 use super::main_view::{kind_icon, Main, Nav};
-use super::theme::{pal, semibold, Icon};
+use super::theme::{pal, regular, semibold, Icon};
 use super::widgets;
 use crate::model::{Id, Item, Kind};
 use crate::secret::Protected;
@@ -54,7 +54,7 @@ impl Main {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width() - 118.0);
                 ui.spacing_mut().item_spacing.y = 1.0;
-                ui.label(RichText::new(label).size(12.0).color(p.faint));
+                widgets::line_label(ui, label, regular(12.0), p.faint);
                 body(ui);
             });
             ui.with_layout(Layout::right_to_left(Align::Center), actions);
@@ -81,15 +81,17 @@ impl Main {
             |ui| {
                 if shown {
                     let text = secret.open_str();
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(text.as_str())
-                                .monospace()
-                                .size(14.5)
-                                .color(p.text),
-                        )
-                        .wrap(),
-                    );
+                    if super::bidi::paragraph(ui, &text, 14.5, p.text, true).is_none() {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(text.as_str())
+                                    .monospace()
+                                    .size(14.5)
+                                    .color(p.text),
+                            )
+                            .wrap(),
+                        );
+                    }
                 } else {
                     ui.label(RichText::new(MASK).color(p.muted));
                 }
@@ -124,7 +126,7 @@ impl Main {
             ui,
             label,
             |ui| {
-                ui.add(egui::Label::new(RichText::new(value).size(14.5).color(p.text)).wrap());
+                widgets::wrapped_label(ui, value, regular(14.5), p.text, false);
             },
             |ui| {
                 if widgets::icon_button(ui, Icon::COPY, &format!("Copy {}", what.to_lowercase()))
@@ -166,9 +168,7 @@ impl Main {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width() - 250.0);
                 ui.spacing_mut().item_spacing.y = 3.0;
-                ui.add(
-                    egui::Label::new(RichText::new(&item.title).font(semibold(22.0))).truncate(),
-                );
+                widgets::line_label(ui, &item.title, semibold(22.0), p.text);
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     widgets::badge(ui, &kind_icon(item.kind).with(item.kind.label()), p.accent);
@@ -264,6 +264,24 @@ impl Main {
             });
         });
         ui.add_space(8.0);
+
+        // Files dragged onto the window are attached to the item on show.
+        let can_drop = !trashed && self.dialog.is_none() && !sh.shot;
+        let dropping = can_drop && ctx.input(|i| !i.raw.hovered_files.is_empty());
+        if can_drop {
+            let dropped: Vec<std::path::PathBuf> = ctx.input(|i| {
+                i.raw
+                    .dropped_files
+                    .iter()
+                    .filter_map(|f| f.path.clone())
+                    .collect()
+            });
+            for path in dropped {
+                if self.attach_path(sh, id, &path) {
+                    changed = true;
+                }
+            }
+        }
 
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -419,7 +437,7 @@ impl Main {
                         });
                         if shown {
                             let text = item.notes.open_str();
-                            ui.add(egui::Label::new(RichText::new(text.as_str()).size(14.0)).wrap());
+                            widgets::wrapped_label(ui, &text, regular(14.0), p.text, true);
                         } else {
                             ui.label(RichText::new("Hidden. Click the eye to read.").color(p.faint));
                         }
@@ -499,10 +517,12 @@ impl Main {
                                 }
                             });
                         });
-                        if item.attachments.is_empty() {
+                        if dropping {
+                            widgets::banner(ui, Icon::ATTACH, p.accent, "Drop the file here to store it in this item.");
+                        } else if item.attachments.is_empty() {
                             ui.label(
                                 RichText::new(format!(
-                                    "Files are stored encrypted inside the vault (up to {} MB each).",
+                                    "Files are stored encrypted inside the vault (up to {} MB each). You can also drag a file onto this window.",
                                     sh.settings.attachment_limit_mb
                                 ))
                                 .color(p.faint),
@@ -513,7 +533,7 @@ impl Main {
                         for (n, a) in item.attachments.iter().enumerate() {
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new(Icon::DOCUMENT.glyph()).color(p.muted));
-                                ui.add(egui::Label::new(RichText::new(&a.name).size(14.0)).truncate());
+                                widgets::line_label(ui, &a.name, regular(14.0), p.text);
                                 ui.label(RichText::new(util::human_size(a.size)).size(12.5).color(p.faint));
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     if widgets::icon_button(ui, Icon::DELETE, "Remove from the vault").clicked() {
@@ -673,10 +693,20 @@ impl Main {
         else {
             return false;
         };
+        self.attach_path(sh, id, &path)
+    }
+
+    /// Stores one file from disk in the item (the button and drag-and-drop).
+    fn attach_path(&mut self, sh: &mut Shared, id: Id, path: &std::path::Path) -> bool {
+        if path.is_dir() {
+            sh.toast(
+                "Folders cannot be attached. Drop the files themselves.",
+                true,
+            );
+            return false;
+        }
         let limit = u64::from(sh.settings.attachment_limit_mb) * 1024 * 1024;
-        let size = std::fs::metadata(&path)
-            .map(|m| m.len())
-            .unwrap_or(u64::MAX);
+        let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(u64::MAX);
         if size > limit {
             sh.toast(
                 format!(
@@ -687,7 +717,7 @@ impl Main {
             );
             return false;
         }
-        match std::fs::read(&path) {
+        match std::fs::read(path) {
             Ok(bytes) => {
                 let bytes = zeroize::Zeroizing::new(bytes);
                 let name = path

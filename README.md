@@ -13,7 +13,7 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=for-the-badge&logo=windows11&logoColor=white" />
   <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-B7410E?style=for-the-badge&logo=rust&logoColor=white" />
   <img alt="License" src="https://img.shields.io/badge/License-MIT-10C98F?style=for-the-badge" />
-  <img alt="EXE size" src="https://img.shields.io/badge/EXE-8.2%20MB-3B48D8?style=for-the-badge" />
+  <img alt="EXE size" src="https://img.shields.io/badge/EXE-8.3%20MB-3B48D8?style=for-the-badge" />
 </p>
 
 <p>
@@ -22,7 +22,7 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
   <img alt="Offline" src="https://img.shields.io/badge/works-fully%20offline-10C98F?style=flat-square" />
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-10C98F?style=flat-square&logo=shield&logoColor=white" />
   <img alt="Setup and portable" src="https://img.shields.io/badge/setup%20%2B%20portable-no%20runtimes-10C98F?style=flat-square" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-80%20passing-10C98F?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-99%20passing-10C98F?style=flat-square" />
   <img alt="Made by Zheer Khalid" src="https://img.shields.io/badge/made%20by-Zheer%20Khalid-FF5A4E?style=flat-square" />
 </p>
 
@@ -32,6 +32,7 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
 [**Security**](#%EF%B8%8F-security) ·
 [**Online checks**](#-optional-online-checks) ·
 [**Build**](#%EF%B8%8F-build-from-source) ·
+[**Changelog**](CHANGELOG.md) ·
 [**Developer**](#-developer)
 
 <img src="docs/screenshots/main.png" alt="KeepForge main window" width="900" />
@@ -53,7 +54,7 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
 - One encrypted `.kfv` file; keep it anywhere, including a synced folder
 - Master password, plus an optional **key file**
 - Logins, cards, identities, secure notes, Wi-Fi and licence keys
-- Folders, tags, favourites, trash, attachments
+- Folders, tags, favourites, trash (it can empty itself), attachments by button or drag and drop
 - Password **history** for every item, with restore
 - Several vaults, rolling backups, merge when two PCs changed the file
 
@@ -61,7 +62,9 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
 <td width="50%" valign="top">
 
 ### ⚡ Easy every day
-- Instant search (`Ctrl+F`) with type, folder and tag filters
+- Instant search (`Ctrl+F`) with type, folder and tag filters; sort by title, recently changed or recently added
+- Arrow keys walk the list, also from the search box
+- **Kurdish, Arabic, Persian and Hebrew** titles, notes and tags are drawn joined up and in reading order
 - One click to copy a user name, password or one-time code
 - **Auto-type** into the window you were using, by button or global hotkey
 - Built-in **authenticator** (TOTP) with a countdown ring
@@ -79,13 +82,14 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
 - User names, PINs and tokens
 - Entropy and a realistic strength estimate (zxcvbn) as you type
 - Available on its own page and inside the edit form
+- Remembers the passwords you copied until the vault locks
 
 </td>
 <td valign="top">
 
 ### 🩺 Security dashboard
 - Weak, reused and old passwords at a glance
-- Incomplete logins and items about to expire
+- Incomplete logins, unencrypted `http://` addresses and items about to expire
 - **Leaked password check** against Pwned Passwords (k-anonymity: only 5 characters of a hash leave your PC)
 - **Email breach lookup**: which known breaches include your address
 - Recovery-code tracking and a printable emergency sheet
@@ -107,7 +111,7 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
 <td valign="top">
 
 ### 🔄 Moving in and out
-- Import CSV exports from common browsers and password managers, with column mapping for anything else
+- Import CSV exports from common browsers and password managers (logins, notes, cards and identities), with column mapping for anything else
 - Import one common JSON export shape
 - Export an encrypted copy
 - Plain CSV or JSON export behind a clear warning
@@ -144,6 +148,10 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
 <td width="50%" align="center"><b>Card item</b><br><img src="docs/screenshots/card.png" alt="Card item" /></td>
 <td width="50%" align="center"><b>Light theme</b><br><img src="docs/screenshots/light-theme.png" alt="Light theme" /></td>
 </tr>
+<tr>
+<td width="50%" align="center"><b>Kurdish and Arabic text</b><br><img src="docs/screenshots/kurdish.png" alt="An item written in Kurdish" /></td>
+<td width="50%" align="center"><b>Sorted by recently changed</b><br><img src="docs/screenshots/sorted.png" alt="List sorted by recently changed" /></td>
+</tr>
 </table>
 
 <sub>Screenshots use the built-in demo vault (<code>KeepForge.exe --demo</code>). Every name, address and breach in them is invented.</sub>
@@ -156,14 +164,21 @@ Get it from the [**latest release**](https://github.com/zheerkhalid/keepforge/re
 |---|---|
 | `KeepForge-Setup.exe` | Per-user installer (no administrator rights), Start Menu shortcut, `.kfv` file association, uninstaller |
 | `KeepForge-x.y.z-portable-x64.zip` | Portable: unzip and run. Settings stay next to the EXE, so it works from a USB stick |
-| `KeepForge.exe` | The bare 8.2 MB EXE |
+| `KeepForge.exe` | The bare 8.3 MB EXE |
 
 | Key | Action |
 |---|---|
 | `Ctrl+F` | Search |
 | `Ctrl+N` | New item |
+| `Ctrl+E` | Edit the selected item |
 | `Ctrl+S` | Save |
+| `Ctrl+B` / `Ctrl+C` / `Ctrl+T` | Copy the user name / password / one-time code |
+| `Up` `Down` `Page Up` `Page Down` `Home` `End` | Move through the list (Up and Down also work from the search box) |
+| `Enter` in the search box | Select the first result |
+| `Delete` | Move the selected item to the trash |
 | `Ctrl+L` | Lock the vault |
+
+What changed in each version is in the [**changelog**](CHANGELOG.md).
 
 **There is no password recovery.** If you lose the master password (or the key file, if you use one), nobody can open the vault, including the developer. Print the emergency sheet and keep it somewhere safe.
 
@@ -184,7 +199,9 @@ Get it from the [**latest release**](https://github.com/zheerkhalid/keepforge/re
 
 **What it cannot protect against:** malware or a keylogger running as you while the vault is unlocked, a weak master password, a compromised Windows or administrator, and anything you export or paste elsewhere in plain text. The full list, including known limits of this implementation, is in [`docs/SECURITY.md`](docs/SECURITY.md).
 
-**Not in this version:** browser extension, passkeys, a sync service, mobile apps, Windows Hello unlock.
+**Not in this version:** browser extension, passkeys, a sync service, mobile apps, Windows Hello unlock (a sound version needs a key that Hello itself protects, not a prompt in front of a stored key; see [`docs/SECURITY.md`](docs/SECURITY.md)).
+
+**Known limits:** text boxes show Kurdish and Arabic letters unjoined while you type (the saved text is displayed properly everywhere else); the import layouts are tested with invented sample files, not with every version of every other program's export.
 
 ## 🌐 Optional online checks
 
@@ -212,6 +229,7 @@ cd keepforge
 cargo build --release
 # -> target\release\KeepForge.exe
 cargo test
+# scripts\package.ps1 builds the EXE, the portable ZIP and the installer (it follows CARGO_TARGET_DIR)
 ```
 
 Useful switches:
@@ -221,7 +239,7 @@ Useful switches:
 | `KeepForge.exe --demo` | Open an invented in-memory vault; nothing is written |
 | `KeepForge.exe --selftest` | Create a temporary vault and check save, reopen, wrong password, tampering, backups, import/export and lock wipe |
 | `KeepForge.exe --hardening-report` | Print which process protections are active |
-| `KeepForge.exe --screenshot out.png` | Render the window to a PNG and exit |
+| `KeepForge.exe --screenshot out.png [--view name]` | Render the window to a PNG and exit (`--help` lists the views) |
 
 ```
 src/
@@ -233,7 +251,9 @@ src/
   generator.rs / strength.rs / totp.rs / health.rs
   hibp.rs / breach.rs / torrent.rs / net.rs   the optional online checks
   kfx.rs         password-encrypted files
-  ui/            the egui interface
+  ui/            the egui interface (ui/bidi.rs draws right-to-left text)
+tests/
+  compat.rs      a vault written by 1.0.1 must still open, save and reopen
 docs/
   FORMAT.md      the file formats, byte for byte
   SECURITY.md    threat model and known limits

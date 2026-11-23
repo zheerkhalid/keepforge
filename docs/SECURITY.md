@@ -95,6 +95,15 @@ What cannot be done, and you should know:
   KeepForge clears the toolkit's undo history for secret fields after every
   frame and keeps its own copies in wiping buffers, but it cannot wipe the
   toolkit's internals.
+- Kurdish, Arabic and other right-to-left text is drawn by Windows (GDI)
+  into small bitmaps, because the toolkit cannot join those letters. The
+  bitmaps are a second copy of what is on screen: those of a revealed secret
+  (a note, a hidden field) are dropped as soon as it is hidden again, and
+  all of them when the vault locks. Like the toolkit's own caches they are
+  freed, not wiped.
+- The Generator page keeps the last 8 passwords you copied from it. They are
+  encrypted in memory under the session key like every other secret, never
+  written to disk, and unreadable once the vault locks.
 - The password strength estimator (zxcvbn), the CBOR and JSON encoders and
   the Windows clipboard make short-lived ordinary copies of what they
   process. They are freed, not wiped.

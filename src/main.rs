@@ -12,9 +12,10 @@ const USAGE: &str = "KeepForge
   KeepForge.exe --demo             an invented vault held in memory; nothing is read,
                                    written or sent
   KeepForge.exe --screenshot <png> render the window to a PNG and exit (implies --demo)
-        [--view welcome|create|unlock|main|card|wifi|edit|generator|health|breach|
-                authenticator|tools|tools-names|tools-encrypt|tools-checksum|tools-qr|
-                tools-shred|tools-torrent|settings|trash|about] [--light]
+        [--view welcome|create|unlock|main|card|wifi|kurdish|recent|edit|generator|
+                generator-history|health|breach|authenticator|tools|tools-names|
+                tools-encrypt|tools-checksum|tools-qr|tools-shred|tools-torrent|
+                settings|trash|about] [--light]
   KeepForge.exe --selftest         create a vault in a temporary folder, exercise it end
                                    to end, check the results, clean up
   KeepForge.exe --selftest-clipboard

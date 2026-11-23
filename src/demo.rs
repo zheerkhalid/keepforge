@@ -9,6 +9,10 @@ use crate::util::{self, DAY};
 use std::sync::Arc;
 
 pub const DEMO_EMAIL: &str = "alex.morgan@example.com";
+/// Title of the demo item written in Kurdish ("work email").
+pub const DEMO_KURDISH_TITLE: &str =
+    "\u{626}\u{6CC}\u{645}\u{6D5}\u{6CC}\u{6B5}\u{6CC} \u{6A9}\u{627}\u{631}";
+
 pub const DEMO_PATH: &str = "C:\\Users\\Alex\\Documents\\Personal.kfv";
 
 #[allow(clippy::too_many_arguments)]
@@ -296,6 +300,29 @@ pub fn vault(s: &Arc<SessionKey>, now: i64) -> Vault {
     api.modified = now - 60 * DAY;
     v.items.push(api);
 
+    // A Kurdish title, user name, tag and note: right-to-left text.
+    let mut kurdish = login(
+        s,
+        now,
+        DEMO_KURDISH_TITLE,
+        "\u{626}\u{627}\u{6B5}\u{6CE}\u{6A9}\u{633}",
+        "qN4!zVb7#Lw2@Hs9",
+        "https://posta.example",
+        21,
+        "",
+    );
+    kurdish.folder = work;
+    kurdish.tags = vec!["\u{6A9}\u{627}\u{631}".into()];
+    kurdish.notes = Protected::seal_str(
+        s,
+        "\u{626}\u{6D5}\u{645} \u{6BE}\u{6D5}\u{698}\u{645}\u{627}\u{631}\u{6D5} \u{628}\u{6C6} \u{6A9}\u{627}\u{631}\u{6CC} \u{695}\u{6C6}\u{698}\u{627}\u{646}\u{6D5}\u{6CC}\u{6D5}.",
+    );
+    kurdish.fields.push(CustomField::plain(
+        "\u{628}\u{6D5}\u{634}",
+        "\u{6A9}\u{627}\u{631}\u{6AF}\u{6CE}\u{695}\u{6CC}",
+    ));
+    v.items.push(kurdish);
+
     let mut old = login(
         s,
         now,
@@ -409,6 +436,7 @@ mod tests {
         }
         assert!(v.items.iter().any(|i| i.in_trash()));
         assert!(v.items.iter().any(|i| !i.recovery_codes.is_empty()));
+        assert!(v.items.iter().any(|i| i.title == DEMO_KURDISH_TITLE));
         assert_eq!(
             v.emails(),
             vec![

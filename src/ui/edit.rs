@@ -285,6 +285,14 @@ impl Main {
                     if form.id.is_none() && form.title.is_empty() && !form.gen_open {
                         title.request_focus();
                     }
+                    if super::bidi::needs_native(&form.title) {
+                        // The text box cannot join Kurdish or Arabic letters;
+                        // this line shows the title as it will appear.
+                        ui.horizontal(|ui| {
+                            widgets::caption(ui, "Shown as");
+                            super::bidi::label(ui, form.title.trim(), 14.5, true, p.text);
+                        });
+                    }
                     if let Some(label) = form.kind.username_label() {
                         ui.add_space(2.0);
                         widgets::caption(ui, label);

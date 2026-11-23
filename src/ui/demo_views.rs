@@ -105,6 +105,24 @@ pub fn initial_screen(view: &str, sh: &mut Shared) -> Screen {
                 _ => Tab::Strength,
             };
         }
+        "kurdish" => {
+            select(&mut main, crate::demo::DEMO_KURDISH_TITLE);
+            main.reveal.insert("notes".into(), f64::MAX);
+            main.scroll_to_selected = true;
+        }
+        "recent" => {
+            sh.settings.list_sort = crate::settings::SortOrder::Changed;
+            select(&mut main, "Example Mail");
+        }
+        "generator-history" => {
+            main.nav = Nav::Generator;
+            main.pages.gen_value.set("m7#Qv2!xLp9@Wz4&Tr6k");
+            let session = main.v.session.clone();
+            for pw in ["harbor-plank-violet-otter", "T4w!nB8z#Rk2@Lq6"] {
+                main.pages.remember_generated(&session, pw);
+            }
+            main.reveal.insert("gen0".into(), f64::MAX);
+        }
         "card" => select(&mut main, "Sample Bank debit card"),
         "wifi" => select(&mut main, "Home Wi-Fi"),
         _ => select(&mut main, "Example Mail"),

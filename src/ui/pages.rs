@@ -11,7 +11,7 @@ use super::widgets;
 use crate::breach::{Breach, BreachError, EmailResult};
 use crate::generator::{self, OsRng};
 use crate::model::{Id, Kind, Vault};
-use crate::secret::SecretInput;
+use crate::secret::{Protected, SecretInput, SessionKey};
 use crate::settings::ThemeChoice;
 use crate::torrent::{PeerError, PeerReport};
 use crate::util;
@@ -43,6 +43,9 @@ pub struct PageState {
     // Generator page
     pub gen_value: SecretInput,
     gen_strength: StrengthCache,
+    /// Passwords copied from the generator page, newest first. Encrypted in
+    /// memory like every other secret and gone when the vault locks.
+    pub gen_history: Vec<Protected>,
     // Authenticator
     pub auth_search: String,
     // Settings
@@ -69,13 +72,30 @@ impl Default for PageState {
             show_adult: false,
             gen_value: SecretInput::new(),
             gen_strength: StrengthCache::default(),
+            gen_history: Vec::new(),
             auth_search: String::new(),
             hotkey_text: None,
         }
     }
 }
 
+/// How many copied passwords the generator page remembers.
+pub const GEN_HISTORY: usize = 8;
+
 impl PageState {
+    /// Remembers a password that was just copied from the generator, so one
+    /// that was pasted into a sign-up form but not saved yet is not lost.
+    pub fn remember_generated(&mut self, session: &Arc<SessionKey>, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.gen_history
+            .retain(|old| old.open_str().as_str() != text);
+        self.gen_history
+            .insert(0, Protected::seal_str(session, text));
+        self.gen_history.truncate(GEN_HISTORY);
+    }
+
     pub fn email_result(&mut self, email: String, result: Result<EmailResult, BreachError>) {
         self.email_results.retain(|(e, _)| *e != email);
         self.email_results
@@ -721,11 +741,21 @@ impl Main {
                     }
                 });
             }
+            if !report.insecure.is_empty() {
+                any = true;
+                widgets::card(ui, |ui| {
+                    widgets::section(ui, "Unencrypted web addresses");
+                    widgets::note(ui, "These logins point at an address that starts with http://, so the password travels without encryption. See whether the site also works with https:// and change the saved address.");
+                    for id in &report.insecure {
+                        self.item_line(ui, *id, "Address starts with http://", p.warn);
+                    }
+                });
+            }
             if !any {
                 widgets::card(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(Icon::DONE.glyph()).size(20.0).color(p.accent));
-                        ui.label(RichText::new("No weak, reused, old or expiring passwords found.").size(15.0));
+                        ui.label(RichText::new("No weak, reused, old or expiring passwords and no unencrypted addresses found.").size(15.0));
                     });
                 });
             }
@@ -1147,6 +1177,9 @@ impl Main {
         }
         let mut again = false;
         let mut copy = false;
+        let mut copy_old: Option<usize> = None;
+        let mut toggle: Option<String> = None;
+        let mut forget = false;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.set_max_width((ui.available_width() - 12.0).min(820.0));
             ui.spacing_mut().item_spacing.y = 12.0;
@@ -1215,6 +1248,52 @@ impl Main {
                 }
                 widgets::note(ui, "These are also the defaults for the generator inside the item editor. Passphrases use the EFF large wordlist (7,776 words).");
             });
+            if !self.pages.gen_history.is_empty() {
+                widgets::card(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 6.0;
+                    ui.horizontal(|ui| {
+                        widgets::section(ui, "Copied in this session");
+                        ui.label(
+                            RichText::new(format!("{} of {GEN_HISTORY} kept", self.pages.gen_history.len()))
+                                .size(12.5)
+                                .color(p.faint),
+                        );
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if widgets::link(ui, "Forget these").clicked() {
+                                forget = true;
+                            }
+                        });
+                    });
+                    for n in 0..self.pages.gen_history.len() {
+                        let key = format!("gen{n}");
+                        let shown = self.reveal.contains_key(&key);
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.set_width(ui.available_width() - 90.0);
+                                if shown {
+                                    let text = self.pages.gen_history[n].open_str();
+                                    ui.add(
+                                        egui::Label::new(RichText::new(text.as_str()).monospace().size(14.0))
+                                            .truncate(),
+                                    );
+                                } else {
+                                    ui.label(RichText::new("••••••••••••").color(p.muted));
+                                }
+                            });
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                if widgets::icon_button(ui, Icon::COPY, "Copy again").clicked() {
+                                    copy_old = Some(n);
+                                }
+                                let icon = if shown { Icon::HIDE } else { Icon::VIEW };
+                                if widgets::icon_button(ui, icon, if shown { "Hide" } else { "Show for a moment" }).clicked() {
+                                    toggle = Some(key);
+                                }
+                            });
+                        });
+                    }
+                    widgets::note(ui, "Passwords you copied from this page, newest first, in case one went into a sign-up form before you saved it. They are kept in memory only and are gone when the vault locks.");
+                });
+            }
             ui.add_space(8.0);
         });
         if again {
@@ -1223,6 +1302,26 @@ impl Main {
         if copy {
             let text = self.pages.gen_value.to_secret();
             sh.copy_secret(&text, "Password");
+            self.pages.remember_generated(&self.v.session, &text);
+            self.reveal.retain(|k, _| !k.starts_with("gen"));
+        }
+        if let Some(n) = copy_old {
+            let text = self.pages.gen_history[n].open_str();
+            sh.copy_secret(&text, "Password");
+        }
+        if let Some(key) = toggle {
+            if self.reveal.remove(&key).is_none() {
+                let until = ui.input(|i| i.time) + f64::from(sh.settings.reveal_seconds);
+                self.reveal.insert(key, until);
+            }
+        }
+        if forget {
+            self.pages.gen_history.clear();
+            self.reveal.retain(|k, _| !k.starts_with("gen"));
+        }
+        if self.reveal.keys().any(|k| k.starts_with("gen")) {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(500));
         }
     }
 
@@ -1359,6 +1458,14 @@ impl Main {
                     &[(5, "5 MB"), (10, "10 MB"), (25, "25 MB"), (50, "50 MB"), (100, "100 MB")],
                 );
                 widgets::divider(ui);
+                choice_row(
+                    ui,
+                    "Empty the trash by itself",
+                    "Items that have been in the trash this long are removed for good the next time a vault is unlocked.",
+                    &mut sh.settings.trash_days,
+                    &[(0, "Never"), (30, "30 days"), (90, "90 days"), (365, "1 year")],
+                );
+                widgets::divider(ui);
                 setting(ui, "Close this vault", "Lock it and go back to the start screen to open or create another.", |ui| {
                     if widgets::ghost_button(ui, "Lock and close").clicked() {
                         go = Some(Go::LockAndClose);
@@ -1493,5 +1600,36 @@ impl Main {
             self.pages.hotkey_text = None;
         }
         go
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generator_history_keeps_the_newest_without_repeats() {
+        let session = SessionKey::new();
+        let mut pages = PageState::default();
+        pages.remember_generated(&session, "");
+        assert!(pages.gen_history.is_empty());
+        for n in 0..12 {
+            pages.remember_generated(&session, &format!("pw-{n}"));
+        }
+        assert_eq!(pages.gen_history.len(), GEN_HISTORY);
+        assert_eq!(pages.gen_history[0].open_str().as_str(), "pw-11");
+        // Copying an older one again moves it to the top instead of repeating it.
+        pages.remember_generated(&session, "pw-8");
+        let all: Vec<String> = pages
+            .gen_history
+            .iter()
+            .map(|h| h.open_str().to_string())
+            .collect();
+        assert_eq!(all.len(), GEN_HISTORY);
+        assert_eq!(all[0], "pw-8");
+        assert_eq!(all.iter().filter(|t| *t == "pw-8").count(), 1);
+        // Locking wipes the session key: nothing of the history can be read.
+        session.wipe();
+        assert!(pages.gen_history.iter().all(|h| h.open_str().is_empty()));
     }
 }

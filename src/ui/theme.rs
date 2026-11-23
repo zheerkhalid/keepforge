@@ -288,6 +288,7 @@ impl Icon {
     pub const MORE: Icon = Icon("\u{E712}");
     pub const DOWNLOAD: Icon = Icon("\u{E896}");
     pub const CALCULATOR: Icon = Icon("\u{E8EF}");
+    pub const SORT: Icon = Icon("\u{E8CB}");
 
     /// The glyph, or an empty string when the icon font is unavailable.
     pub fn glyph(self) -> &'static str {

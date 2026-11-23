@@ -13,6 +13,30 @@ pub enum ThemeChoice {
     System,
 }
 
+/// How the item list is ordered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SortOrder {
+    /// By title, A to Z.
+    #[default]
+    Title,
+    /// Most recently changed first.
+    Changed,
+    /// Most recently added first.
+    Created,
+}
+
+impl SortOrder {
+    pub const ALL: [SortOrder; 3] = [SortOrder::Title, SortOrder::Changed, SortOrder::Created];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SortOrder::Title => "Title (A to Z)",
+            SortOrder::Changed => "Recently changed",
+            SortOrder::Created => "Recently added",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct RecentVault {
@@ -61,6 +85,11 @@ pub struct Settings {
     pub ip_lookup_ack: bool,
     /// Block dynamically generated code in this process (takes effect at next start).
     pub block_dynamic_code: bool,
+    /// Order of the item list.
+    pub list_sort: SortOrder,
+    /// Items stay in the trash this many days, then are removed for good
+    /// when the vault is next unlocked (0 = until the trash is emptied).
+    pub trash_days: u32,
     pub recent: Vec<RecentVault>,
 }
 
@@ -89,6 +118,8 @@ impl Default for Settings {
             email_lookup_ack: false,
             ip_lookup_ack: false,
             block_dynamic_code: false,
+            list_sort: SortOrder::Title,
+            trash_days: 0,
             recent: Vec::new(),
         }
     }
@@ -121,6 +152,7 @@ impl Settings {
         self.attachment_limit_mb = self.attachment_limit_mb.clamp(1, 200);
         self.old_password_months = self.old_password_months.clamp(1, 120);
         self.reveal_seconds = self.reveal_seconds.clamp(5, 300);
+        self.trash_days = self.trash_days.min(3650);
         self.recent.truncate(RECENT_LIMIT);
     }
 
@@ -210,6 +242,18 @@ mod tests {
         assert_eq!(loaded.backups, 50);
         assert_eq!(loaded.clipboard_seconds, 600);
         assert_eq!(loaded.auto_lock_minutes, 5);
+        // A settings file written by an older version has no sort order or
+        // trash limit: the list stays sorted by title and nothing is purged.
+        assert_eq!(loaded.list_sort, SortOrder::Title);
+        assert_eq!(loaded.trash_days, 0);
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"list_sort":"Changed","trash_days":999999}"#,
+        )
+        .unwrap();
+        let loaded = Settings::load(&dir);
+        assert_eq!(loaded.list_sort, SortOrder::Changed);
+        assert_eq!(loaded.trash_days, 3650);
         std::fs::write(dir.join("settings.json"), "{{{").unwrap();
         assert_eq!(Settings::load(&dir), Settings::default());
         std::fs::remove_dir_all(&dir).unwrap();
@@ -245,6 +289,7 @@ mod tests {
                 "generator_phrase",
                 "hide_from_capture",
                 "ip_lookup_ack",
+                "list_sort",
                 "lock_on_minimize",
                 "lock_on_session",
                 "old_password_months",
@@ -254,6 +299,7 @@ mod tests {
                 "search_hidden",
                 "start_minimised",
                 "theme",
+                "trash_days",
                 "tray_icon",
             ]
         );

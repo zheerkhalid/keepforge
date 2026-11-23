@@ -9,6 +9,7 @@ use super::widgets;
 use crate::autotype;
 use crate::health::Report;
 use crate::model::{Id, Item, Kind};
+use crate::settings::SortOrder;
 use crate::store::{OpenVault, SaveError};
 use eframe::egui::{
     self, vec2, Align, Align2, Color32, CornerRadius, Frame, Key, Layout, Margin, Rect, RichText,
@@ -62,6 +63,44 @@ struct ListKey {
     fav_only: bool,
     kind: Option<Kind>,
     search_hidden: bool,
+    sort: SortOrder,
+}
+
+/// Height of one row of the item list.
+const ROW: f32 = 58.0;
+
+/// Orders list rows: by title, or newest first with the title as tie-break.
+pub fn sort_items(items: &mut [&Item], order: SortOrder) {
+    match order {
+        SortOrder::Title => items.sort_by_cached_key(|i| i.title.to_lowercase()),
+        SortOrder::Changed => {
+            items.sort_by_cached_key(|i| (std::cmp::Reverse(i.modified), i.title.to_lowercase()))
+        }
+        SortOrder::Created => {
+            items.sort_by_cached_key(|i| (std::cmp::Reverse(i.created), i.title.to_lowercase()))
+        }
+    }
+}
+
+/// Where the selection lands after a navigation key. `current` is the
+/// position of the selected row, if it is in the list.
+pub fn step_selection(current: Option<usize>, len: usize, key: Key, page: usize) -> Option<usize> {
+    if len == 0 {
+        return None;
+    }
+    let last = len - 1;
+    Some(match (key, current) {
+        (Key::Home, _) => 0,
+        (Key::End, _) => last,
+        (Key::ArrowDown | Key::PageDown | Key::Enter, None) => 0,
+        (Key::ArrowUp | Key::PageUp, None) => last,
+        (Key::ArrowDown, Some(n)) => (n + 1).min(last),
+        (Key::ArrowUp, Some(n)) => n.saturating_sub(1),
+        (Key::PageDown, Some(n)) => (n + page.max(1)).min(last),
+        (Key::PageUp, Some(n)) => n.saturating_sub(page.max(1)),
+        (_, Some(n)) => n.min(last),
+        (_, None) => return None,
+    })
 }
 
 pub struct Main {
@@ -71,6 +110,10 @@ pub struct Main {
     pub nav: Nav,
     pub search: String,
     focus_search: bool,
+    /// Bring the selected row into view on the next frame.
+    pub(super) scroll_to_selected: bool,
+    /// Rows that fit in the list (for Page Up / Page Down).
+    list_page: usize,
     pub fav_only: bool,
     pub kind_filter: Option<Kind>,
     pub selected: Option<Id>,
@@ -110,6 +153,8 @@ impl Main {
             nav: Nav::All,
             search: String::new(),
             focus_search: false,
+            scroll_to_selected: false,
+            list_page: 8,
             fav_only: false,
             kind_filter: None,
             selected: None,
@@ -380,6 +425,7 @@ impl Main {
             fav_only: self.fav_only,
             kind: self.kind_filter,
             search_hidden: sh.settings.search_hidden,
+            sort: sh.settings.list_sort,
         };
         if let Some((k, ids)) = &self.list_cache {
             if *k == key {
@@ -405,7 +451,7 @@ impl Main {
         if self.nav == Nav::Trash {
             items.sort_by_key(|i| std::cmp::Reverse(i.deleted));
         } else {
-            items.sort_by_key(|i| i.title.to_lowercase());
+            sort_items(&mut items, sh.settings.list_sort);
         }
         let ids: Vec<Id> = items.iter().map(|i| i.id).collect();
         self.list_cache = Some((key, ids.clone()));
@@ -604,6 +650,22 @@ impl Main {
         self.edit = Some(Box::new(form));
     }
 
+    /// Removes items that have waited in the trash longer than the setting
+    /// allows (called once, right after unlocking).
+    pub fn purge_old_trash(&mut self, ctx: &egui::Context, sh: &mut Shared) {
+        let gone = self.v.vault.purge_trash(sh.now, sh.settings.trash_days);
+        if gone > 0 {
+            sh.toast(
+                format!(
+                    "{gone} item(s) that were in the trash for more than {} days were removed.",
+                    sh.settings.trash_days
+                ),
+                false,
+            );
+            self.changed(ctx, sh);
+        }
+    }
+
     /// Moves an item to the trash, or (for an item already there) asks
     /// before deleting it for good.
     pub fn trash_item(&mut self, ctx: &egui::Context, sh: &mut Shared, id: Id) {
@@ -670,6 +732,30 @@ impl Main {
                 _ => Kind::Login,
             };
             self.new_item(sh, kind);
+        }
+        // Arrow keys walk the list, also while the search box has the focus
+        // (Ctrl+F, type, arrow down, Ctrl+C). Enter picks the first result.
+        if self.nav.is_list() && self.edit.is_none() {
+            let nav_key = ctx.input_mut(|i| {
+                let mut keys = vec![Key::ArrowDown, Key::ArrowUp, Key::PageDown, Key::PageUp];
+                if !typing {
+                    keys.extend([Key::Home, Key::End]);
+                } else if self.selected.is_none() {
+                    keys.push(Key::Enter);
+                }
+                keys.into_iter()
+                    .find(|k| i.consume_key(egui::Modifiers::NONE, *k))
+            });
+            if let Some(key) = nav_key {
+                let ids = self.visible(sh);
+                let current = self
+                    .selected
+                    .and_then(|id| ids.iter().position(|x| *x == id));
+                if let Some(n) = step_selection(current, ids.len(), key, self.list_page) {
+                    self.select(Some(ids[n]));
+                    self.scroll_to_selected = true;
+                }
+            }
         }
         let selected = self
             .selected
@@ -1210,6 +1296,31 @@ impl Main {
                         },
                     );
                     menu.response.on_hover_text("New item (Ctrl+N)");
+                    let current = sh.settings.list_sort;
+                    let sort = ui.menu_button(
+                        RichText::new(if Icon::SORT.glyph().is_empty() {
+                            "Sort"
+                        } else {
+                            Icon::SORT.glyph()
+                        })
+                        .size(14.0)
+                        .color(p.muted),
+                        |ui| {
+                            ui.set_min_width(190.0);
+                            for order in SortOrder::ALL {
+                                if ui
+                                    .selectable_label(order == current, order.label())
+                                    .clicked()
+                                {
+                                    sh.settings.list_sort = order;
+                                    self.scroll_to_selected = true;
+                                    ui.close_menu();
+                                }
+                            }
+                        },
+                    );
+                    sort.response
+                        .on_hover_text(format!("Sort order: {}", current.label()));
                 }
             });
         });
@@ -1270,16 +1381,40 @@ impl Main {
 
         let mut clicked: Option<Id> = None;
         let mut action: Option<(Id, u8)> = None;
+        // (A screenshot keeps asking: its window changes size while it starts.)
+        let wanted = self.scroll_to_selected;
+        self.scroll_to_selected = wanted && sh.shot;
+        let scroll_to = wanted
+            .then(|| {
+                self.selected
+                    .and_then(|id| ids.iter().position(|x| *x == id))
+            })
+            .flatten();
+        self.list_page = ((ui.available_height() / ROW) as usize)
+            .saturating_sub(1)
+            .max(1);
+        // Rows touch each other: the row height given to the scroll area must
+        // be the whole distance from one row to the next.
+        ui.spacing_mut().item_spacing.y = 0.0;
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
-            .show_rows(ui, 58.0, ids.len(), |ui, range| {
+            .show_rows(ui, ROW, ids.len(), |ui, range| {
                 ui.spacing_mut().item_spacing.y = 0.0;
+                if let Some(n) = scroll_to {
+                    // Rows outside the drawn range have a known place too.
+                    let top = ui.cursor().top() + (n as f32 - range.start as f32) * ROW;
+                    let row = Rect::from_min_size(
+                        egui::pos2(ui.cursor().left(), top),
+                        vec2(ui.available_width(), ROW),
+                    );
+                    ui.scroll_to_rect(row, None);
+                }
                 for id in &ids[range] {
                     let Some(item) = self.v.vault.item(*id) else {
                         continue;
                     };
                     let width = ui.available_width() - 8.0;
-                    let (rect, resp) = ui.allocate_exact_size(vec2(width, 58.0), Sense::click());
+                    let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW), Sense::click());
                     let rect = rect.shrink2(vec2(0.0, 2.0));
                     let selected = self.selected == Some(*id);
                     if selected {
@@ -1413,4 +1548,66 @@ fn small_chip(ui: &mut Ui, label: &str, active: bool) -> egui::Response {
             .corner_radius(CornerRadius::same(12))
             .min_size(vec2(0.0, 24.0)),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(title: &str, created: i64, modified: i64) -> Item {
+        let mut i = Item::new(Kind::Login, created);
+        i.title = title.into();
+        i.modified = modified;
+        i
+    }
+
+    #[test]
+    fn list_sorts_by_title_or_newest_first() {
+        let items = [
+            item("delta", 10, 40),
+            item("Alpha", 30, 30),
+            item("charlie", 20, 50),
+            item("Bravo", 20, 50),
+        ];
+        let titles = |order| {
+            let mut refs: Vec<&Item> = items.iter().collect();
+            sort_items(&mut refs, order);
+            refs.iter().map(|i| i.title.as_str()).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            titles(SortOrder::Title),
+            ["Alpha", "Bravo", "charlie", "delta"]
+        );
+        // Newest first; equal times fall back to the title.
+        assert_eq!(
+            titles(SortOrder::Changed),
+            ["Bravo", "charlie", "delta", "Alpha"]
+        );
+        assert_eq!(
+            titles(SortOrder::Created),
+            ["Alpha", "Bravo", "charlie", "delta"]
+        );
+    }
+
+    #[test]
+    fn keys_move_the_selection_and_stop_at_the_ends() {
+        let step = |current, key| step_selection(current, 10, key, 4);
+        assert_eq!(step_selection(None, 0, Key::ArrowDown, 4), None);
+        assert_eq!(step(None, Key::ArrowDown), Some(0));
+        assert_eq!(step(None, Key::Enter), Some(0));
+        assert_eq!(step(None, Key::ArrowUp), Some(9));
+        assert_eq!(step(Some(3), Key::ArrowDown), Some(4));
+        assert_eq!(step(Some(9), Key::ArrowDown), Some(9));
+        assert_eq!(step(Some(0), Key::ArrowUp), Some(0));
+        assert_eq!(step(Some(3), Key::PageDown), Some(7));
+        assert_eq!(step(Some(8), Key::PageDown), Some(9));
+        assert_eq!(step(Some(2), Key::PageUp), Some(0));
+        assert_eq!(step(Some(5), Key::Home), Some(0));
+        assert_eq!(step(Some(5), Key::End), Some(9));
+        // A page of zero rows (a very small window) still moves by one.
+        assert_eq!(step_selection(Some(3), 10, Key::PageDown, 0), Some(4));
+        // Other keys leave the selection where it is.
+        assert_eq!(step(Some(5), Key::A), Some(5));
+        assert_eq!(step(None, Key::A), None);
+    }
 }
