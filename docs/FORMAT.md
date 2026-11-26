@@ -102,6 +102,16 @@ missing fields take defaults, which is how later versions can add fields).
 `schema` is 1. Secrets (passwords, one-time-code seeds, notes, hidden
 fields, recovery codes, service keys) are CBOR byte strings.
 
+Since 1.2.0 the `Vault` structure has one more field, `exposure`: a text
+holding the saved Exposure check results as JSON (`exposure::Cache` in
+`src/exposure/mod.rs`: the values checked, when, what each source answered,
+and which breaches of saved sites were found). It is inside the encrypted
+payload like everything else. Vaults without it read as having no saved
+results; 1.0 and 1.1 ignore it (and drop it if they save the vault). A text
+that cannot be read is treated as empty, never as an error. API keys for
+the Exposure check sources are kept as `service_keys` entries
+(`hibp-api-key`, `leaklookup-api-key`, `enzoic-api-key`).
+
 ### 1.4 Attachment sections
 
 Sections appear in the order in which items, and attachments within an

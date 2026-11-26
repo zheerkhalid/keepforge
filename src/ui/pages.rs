@@ -8,9 +8,8 @@ use super::main_view::{Main, Nav};
 use super::start::StrengthCache;
 use super::theme::{pal, regular, semibold, Icon};
 use super::widgets;
-use crate::breach::{Breach, BreachError, EmailResult};
 use crate::generator::{self, OsRng};
-use crate::model::{Id, Kind, Vault};
+use crate::model::{Id, Kind};
 use crate::secret::{Protected, SecretInput, SessionKey};
 use crate::settings::ThemeChoice;
 use crate::torrent::{PeerError, PeerReport};
@@ -22,16 +21,8 @@ use eframe::egui::{
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+#[derive(Default)]
 pub struct PageState {
-    // Breach lookup
-    pub email_input: String,
-    pub email_results: Vec<(String, Result<EmailResult, String>)>,
-    pub email_queue: Option<(usize, usize)>,
-    pub email_cancel: Arc<AtomicBool>,
-    flag_cache: Option<(u64, usize, Vec<Id>)>,
-    pub pw_check: SecretInput,
-    pub pw_check_result: Option<Result<u64, String>>,
-    pub pw_check_busy: bool,
     // Torrent exposure check
     pub ip_input: String,
     pub peer: Option<Result<PeerReport, String>>,
@@ -50,33 +41,8 @@ pub struct PageState {
     pub auth_search: String,
     // Settings
     hotkey_text: Option<String>,
-}
-
-impl Default for PageState {
-    fn default() -> Self {
-        PageState {
-            email_input: String::new(),
-            email_results: Vec::new(),
-            email_queue: None,
-            email_cancel: Arc::new(AtomicBool::new(false)),
-            flag_cache: None,
-            pw_check: SecretInput::new(),
-            pw_check_result: None,
-            pw_check_busy: false,
-            ip_input: String::new(),
-            peer: None,
-            peer_busy: false,
-            peer_key: SecretInput::new(),
-            peer_host: String::new(),
-            peer_setup: false,
-            show_adult: false,
-            gen_value: SecretInput::new(),
-            gen_strength: StrengthCache::default(),
-            gen_history: Vec::new(),
-            auth_search: String::new(),
-            hotkey_text: None,
-        }
-    }
+    /// Scroll Settings to the online checks (demo screenshots).
+    pub scroll_online: bool,
 }
 
 /// How many copied passwords the generator page remembers.
@@ -96,43 +62,9 @@ impl PageState {
         self.gen_history.truncate(GEN_HISTORY);
     }
 
-    pub fn email_result(&mut self, email: String, result: Result<EmailResult, BreachError>) {
-        self.email_results.retain(|(e, _)| *e != email);
-        self.email_results
-            .insert(0, (email, result.map_err(|e| e.to_string())));
-        self.flag_cache = None;
-        if let Some((done, _)) = &mut self.email_queue {
-            *done += 1;
-        }
-    }
-
-    pub fn email_done(&mut self) {
-        self.email_queue = None;
-    }
-
     pub fn peer_result(&mut self, result: Result<PeerReport, PeerError>) {
         self.peer_busy = false;
         self.peer = Some(result.map_err(|e| e.to_string()));
-    }
-
-    fn breaches(&self) -> impl Iterator<Item = &Breach> {
-        self.email_results.iter().flat_map(|(_, r)| match r {
-            Ok(EmailResult::Found(list)) => list.iter(),
-            _ => [].iter(),
-        })
-    }
-
-    /// Logins whose site was breached after the password was last changed.
-    pub fn flagged(&mut self, vault: &Vault, rev: u64) -> Vec<Id> {
-        let key = (rev, self.email_results.len());
-        if let Some((r, n, ids)) = &self.flag_cache {
-            if (*r, *n) == key {
-                return ids.clone();
-            }
-        }
-        let ids = crate::breach::items_to_change(vault, self.breaches());
-        self.flag_cache = Some((key.0, key.1, ids.clone()));
-        ids
     }
 }
 
@@ -216,74 +148,6 @@ impl Main {
     // ----------------------------------------------------------------------------------
     // Online checks
     // ----------------------------------------------------------------------------------
-
-    /// Asks (unless the user said not to) and then looks the addresses up.
-    pub(super) fn request_email_lookup(
-        &mut self,
-        ctx: &egui::Context,
-        sh: &mut Shared,
-        emails: Vec<String>,
-    ) {
-        let emails: Vec<String> = emails
-            .into_iter()
-            .map(|e| e.trim().to_lowercase())
-            .filter(|e| crate::model::looks_like_email(e))
-            .collect();
-        if emails.is_empty() {
-            sh.toast("Type an email address first.", true);
-            return;
-        }
-        if sh.demo || sh.settings.email_lookup_ack {
-            self.start_email_lookup(ctx, sh, emails);
-        } else {
-            self.dialog = Some(Dialog::Online(Online::Emails(emails), false));
-        }
-    }
-
-    pub(super) fn start_email_lookup(
-        &mut self,
-        ctx: &egui::Context,
-        sh: &mut Shared,
-        emails: Vec<String>,
-    ) {
-        if self.pages.email_queue.is_some() {
-            return;
-        }
-        if sh.demo {
-            // The demo never goes online: invented results.
-            for email in emails {
-                let result = if email == crate::demo::DEMO_EMAIL {
-                    EmailResult::Found(crate::demo::breaches())
-                } else {
-                    EmailResult::NotFound
-                };
-                self.pages.email_result(email, Ok(result));
-            }
-            return;
-        }
-        self.pages.email_cancel = Arc::new(AtomicBool::new(false));
-        self.pages.email_queue = Some((0, emails.len()));
-        let (tx, cancel, ctx) = (sh.tx.clone(), self.pages.email_cancel.clone(), ctx.clone());
-        std::thread::spawn(move || {
-            let mut throttle =
-                crate::net::Throttle::new(std::time::Duration::from_millis(crate::breach::GAP_MS));
-            for email in emails {
-                if cancel.load(Ordering::Relaxed) {
-                    break;
-                }
-                throttle.pace();
-                let result = crate::breach::lookup(&email);
-                let stop = matches!(result, Err(BreachError::RateLimited));
-                let _ = tx.send(Msg::Email(email, result));
-                ctx.request_repaint();
-                if stop {
-                    break;
-                }
-            }
-            let _ = tx.send(Msg::EmailDone);
-            ctx.request_repaint();
-        });
-    }
 
     pub(super) fn request_pwned_scan(&mut self, ctx: &egui::Context, sh: &mut Shared) {
         if sh.demo || sh.settings.breach_check {
@@ -499,9 +363,10 @@ impl Main {
             widgets::busy_state(ui, "Looking through your passwords…", "");
             return;
         };
-        let flagged = self.pages.flagged(&self.v.vault, self.rev);
+        let flagged = self.exposed_items();
+        let stealers = self.stealer_findings();
         let mut breached: Vec<Id> = self.pwned.keys().copied().collect();
-        for id in &flagged {
+        for (id, _) in &flagged {
             if !breached.contains(id) {
                 breached.push(*id);
             }
@@ -666,17 +531,44 @@ impl Main {
                 }
             });
 
+            // Infostealer findings come first: they concern a whole computer.
+            if !stealers.is_empty() {
+                let mut open = false;
+                widgets::card(ui, |ui| {
+                    widgets::section(ui, "Malware stole saved logins");
+                    for (value, e) in stealers.iter().take(6) {
+                        let what = if e.kind == crate::exposure::FindingKind::StealerSite {
+                            format!("Your login for {} ({value}) was in infostealer logs.", e.domain)
+                        } else if e.date.is_empty() {
+                            format!("{value} is linked to a computer infected by infostealer malware.")
+                        } else {
+                            format!("{value} is linked to a computer infected by infostealer malware on {}.", e.date)
+                        };
+                        widgets::banner(ui, Icon::WARNING, p.danger, &what);
+                    }
+                    widgets::note(ui, "Scan that computer with an up-to-date antivirus, then change the passwords that were saved on it, starting with email and banking.");
+                    open = widgets::ghost_button(ui, "Open the Exposure check").clicked();
+                });
+                if open {
+                    self.nav = Nav::Exposure;
+                }
+            }
+
             // Problem lists.
             let mut any = false;
             if !breached.is_empty() {
                 any = true;
                 widgets::card(ui, |ui| {
-                    widgets::section(ui, "Breached");
-                    widgets::note(ui, "These passwords are known to attackers, or the site was breached after you last changed the password. Change them first.");
+                    widgets::section(ui, "Breached and exposed");
+                    widgets::note(ui, "These passwords are known to attackers, or the Exposure check found that the site lost data after you last changed the password. Change them first.");
                     for id in &breached {
                         let reason = match self.pwned.get(id) {
                             Some(n) => format!("Password seen {} times in breaches", util::thousands(*n)),
-                            None => "Site breached since the last password change".to_string(),
+                            None => flagged
+                                .iter()
+                                .find(|(f, _)| f == id)
+                                .map(|(_, why)| why.clone())
+                                .unwrap_or_else(|| "Site breached since the last password change".to_string()),
                         };
                         self.item_line(ui, *id, &reason, p.danger);
                     }
@@ -760,249 +652,9 @@ impl Main {
                 });
             }
             if !self.pwned_done && self.pwned_progress.is_none() {
-                widgets::note(ui, "\"Breached\" counts what the two optional online checks have found in this session: the password check above (which sends only a 5-character hash prefix) and the Breach lookup page.");
+                widgets::note(ui, "\"Breached\" counts what the optional online checks have found: the password check above (which sends only a 5-character hash prefix) and the results saved by the Exposure check page.");
             }
             ui.add_space(8.0);
-        });
-    }
-
-    // ----------------------------------------------------------------------------------
-    // Breach lookup
-    // ----------------------------------------------------------------------------------
-
-    pub(super) fn breach_ui(&mut self, ui: &mut Ui, sh: &mut Shared) {
-        let p = pal(ui);
-        let ctx = ui.ctx().clone();
-        page_header(
-            ui,
-            "Breach lookup",
-            "See which known data breaches include your email address",
-            |_| {},
-        );
-        let mut lookup: Option<Vec<String>> = None;
-        let mut check_pw = false;
-        let vault_emails = self.v.vault.emails();
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.set_max_width((ui.available_width() - 12.0).min(940.0));
-            ui.spacing_mut().item_spacing.y = 12.0;
-            widgets::card(ui, |ui| {
-                widgets::section(ui, "Check an email address");
-                ui.add_space(2.0);
-                let busy = self.pages.email_queue.is_some();
-                ui.horizontal(|ui| {
-                    let resp = widgets::text_input(ui, &mut self.pages.email_input, "name@example.com", 420.0);
-                    let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if (widgets::primary_button(ui, "Check", !busy).clicked() || enter) && !busy {
-                        lookup = Some(vec![self.pages.email_input.clone()]);
-                    }
-                    if vault_emails.len() > 1 && widgets::ghost_button_enabled(ui, "Check all my emails", !busy).clicked() {
-                        lookup = Some(vault_emails.clone());
-                    }
-                });
-                if !vault_emails.is_empty() {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new("From your vault:").size(12.5).color(p.faint));
-                        for e in vault_emails.iter().take(12) {
-                            if widgets::chip(ui, e, None, false).clicked() && !busy {
-                                self.pages.email_input = e.clone();
-                                lookup = Some(vec![e.clone()]);
-                            }
-                        }
-                    });
-                }
-                if let Some((done, total)) = self.pages.email_queue {
-                    ui.horizontal(|ui| {
-                        ui.add(egui::Spinner::new().size(16.0).color(p.accent));
-                        ui.label(format!("Looking up {} of {total} (one every 1.5 seconds)", (done + 1).min(total)));
-                        if widgets::ghost_button(ui, "Cancel").clicked() {
-                            self.pages.email_cancel.store(true, Ordering::Relaxed);
-                        }
-                    });
-                    let w = ui.available_width();
-                    widgets::progress_bar(ui, done as f32 / total.max(1) as f32, w, p.accent);
-                }
-                widgets::note(ui, "This sends the email address to xposedornot.com over HTTPS, and nothing else. KeepForge asks before the first lookup and never looks anything up in the background.");
-            });
-
-            // Results.
-            let flagged_all = self.pages.flagged(&self.v.vault, self.rev);
-            let results = self.pages.email_results.clone();
-            let found: usize = results
-                .iter()
-                .map(|(_, r)| match r {
-                    Ok(EmailResult::Found(list)) => list.len(),
-                    _ => 0,
-                })
-                .sum();
-            if !results.is_empty() {
-                let text = if found == 0 {
-                    "No breaches found for the addresses checked.".to_string()
-                } else {
-                    format!(
-                        "Found in {found} breach{}; {} of your saved logins should be changed.",
-                        if found == 1 { "" } else { "es" },
-                        flagged_all.len()
-                    )
-                };
-                ui.label(RichText::new(text).font(semibold(16.0)).color(if flagged_all.is_empty() { p.text } else { p.danger }));
-            }
-            for (email, result) in &results {
-                match result {
-                    Err(e) => {
-                        widgets::card(ui, |ui| {
-                            ui.label(RichText::new(email).font(semibold(15.0)));
-                            widgets::banner(ui, Icon::ERROR, p.warn, e);
-                        });
-                    }
-                    Ok(EmailResult::NotFound) => {
-                        widgets::card(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(Icon::DONE.glyph()).size(18.0).color(p.accent));
-                                ui.vertical(|ui| {
-                                    ui.spacing_mut().item_spacing.y = 1.0;
-                                    ui.label(RichText::new(email).font(semibold(15.0)));
-                                    ui.label(RichText::new("No breaches found. This address is not in any breach the service knows about.").color(p.muted));
-                                });
-                            });
-                        });
-                    }
-                    Ok(EmailResult::Found(list)) => {
-                        ui.label(RichText::new(format!("{email}: {} breach{}", list.len(), if list.len() == 1 { "" } else { "es" })).font(semibold(15.0)));
-                        for breach in list.iter().take(60) {
-                            let flags = crate::breach::matching_items(&self.v.vault, breach);
-                            widgets::card(ui, |ui| {
-                                ui.spacing_mut().item_spacing.y = 6.0;
-                                ui.horizontal(|ui| {
-                                    let (tile, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
-                                    widgets::letter_tile(ui, tile, &breach.name);
-                                    ui.vertical(|ui| {
-                                        ui.spacing_mut().item_spacing.y = 1.0;
-                                        ui.label(RichText::new(&breach.name).font(semibold(16.0)));
-                                        let mut facts: Vec<String> = Vec::new();
-                                        if let Some(y) = breach.year {
-                                            facts.push(format!("Breached in {y}"));
-                                        }
-                                        if breach.records > 0 {
-                                            facts.push(format!("{} records", util::thousands(breach.records)));
-                                        }
-                                        if !breach.domain.is_empty() {
-                                            facts.push(breach.domain.clone());
-                                        }
-                                        if !breach.industry.is_empty() {
-                                            facts.push(breach.industry.clone());
-                                        }
-                                        ui.label(RichText::new(facts.join(" · ")).size(12.5).color(p.muted));
-                                    });
-                                });
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.spacing_mut().item_spacing = vec2(6.0, 4.0);
-                                    for kind in &breach.exposed {
-                                        let color = if kind.to_lowercase().contains("password") { p.danger } else { p.info };
-                                        widgets::badge(ui, kind, color);
-                                    }
-                                });
-                                if !breach.description.is_empty() {
-                                    ui.add(egui::Label::new(RichText::new(&breach.description).size(13.0).color(p.muted)).wrap());
-                                }
-                                if !flags.is_empty() {
-                                    widgets::divider(ui);
-                                    for flag in &flags {
-                                        let mut open = false;
-                                        ui.horizontal(|ui| {
-                                            ui.label(RichText::new(Icon::KEY.glyph()).color(p.muted));
-                                            ui.label(RichText::new(&flag.title).size(14.0));
-                                            if flag.change_password {
-                                                widgets::badge(ui, "Change this password", p.danger);
-                                            } else {
-                                                widgets::badge(ui, "Password changed since", p.accent);
-                                            }
-                                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                                open = widgets::ghost_button(ui, "Go to item").clicked();
-                                            });
-                                        });
-                                        if open {
-                                            self.go_to_item(flag.item);
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                        if list.len() > 60 {
-                            widgets::note(ui, &format!("… and {} more breaches for this address.", list.len() - 60));
-                        }
-                    }
-                }
-            }
-            if results.is_empty() && self.pages.email_queue.is_none() {
-                widgets::card(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(Icon::MAIL.glyph()).size(20.0).color(p.muted));
-                        ui.add(egui::Label::new(RichText::new("Nothing checked yet. Results show which sites lost data, what was exposed, and which of your saved logins use a password older than the breach.").color(p.muted)).wrap());
-                    });
-                });
-            }
-
-            // Password check (k-anonymity).
-            widgets::card(ui, |ui| {
-                widgets::section(ui, "Check a password");
-                ui.add_space(2.0);
-                ui.horizontal(|ui| {
-                    widgets::secret_input(ui, &mut self.pages.pw_check, false, "Type or paste a password", 420.0);
-                    let ready = !self.pages.pw_check.is_empty() && !self.pages.pw_check_busy;
-                    if widgets::primary_button(ui, "Check", ready).clicked() {
-                        check_pw = true;
-                    }
-                });
-                match &self.pages.pw_check_result {
-                    Some(Ok(0)) => {
-                        ui.colored_label(p.accent, Icon::DONE.with("Not found in known breaches. That alone does not make it strong."));
-                    }
-                    Some(Ok(n)) => {
-                        ui.colored_label(p.danger, Icon::WARNING.with(&format!("Seen {} times in known breaches. Do not use this password.", util::thousands(*n))));
-                    }
-                    Some(Err(e)) => {
-                        ui.colored_label(p.warn, e);
-                    }
-                    None => {}
-                }
-                widgets::note(ui, "The password is hashed on this PC and only the first 5 characters of the hash are sent to api.pwnedpasswords.com. The password itself never leaves this PC.");
-            });
-            ui.label(
-                RichText::new("Email breach data: XposedOrNot (xposedornot.com). Password breach data: Pwned Passwords (haveibeenpwned.com).")
-                    .size(12.0)
-                    .color(p.faint),
-            );
-            ui.add_space(8.0);
-        });
-        if let Some(list) = lookup {
-            self.request_email_lookup(&ctx, sh, list);
-        }
-        if check_pw {
-            self.check_single_password(&ctx, sh);
-        }
-    }
-
-    fn check_single_password(&mut self, ctx: &egui::Context, sh: &mut Shared) {
-        if sh.demo {
-            self.pages.pw_check_result = Some(Ok(if self.pages.pw_check.as_str() == "password" {
-                10_434_004
-            } else {
-                0
-            }));
-            self.pages.pw_check.wipe();
-            return;
-        }
-        let password = self.pages.pw_check.to_secret();
-        self.pages.pw_check.wipe();
-        self.pages.pw_check_busy = true;
-        self.pages.pw_check_result = None;
-        let ranges = self.ranges.clone();
-        sh.spawn(ctx, move || {
-            let result = match ranges.lock() {
-                Ok(mut cache) => cache.check(&password),
-                Err(_) => Err("Internal error.".to_string()),
-            };
-            Msg::Tool(super::tools::ToolMsg::SinglePwned(result))
         });
     }
 
@@ -1518,23 +1170,13 @@ impl Main {
                 );
             });
 
+            if self.pages.scroll_online {
+                ui.scroll_to_cursor(Some(Align::TOP));
+            }
             widgets::card(ui, |ui| {
                 widgets::section(ui, "Online checks");
                 ui.add_space(2.0);
-                widgets::note(ui, "KeepForge works offline. The only things that ever use the internet are the checks below, and each one runs only when you click it.");
-                toggle_row(
-                    ui,
-                    "Password breach check without asking each time",
-                    "Sends the first 5 characters of each password's SHA-1 hash to api.pwnedpasswords.com. Passwords never leave this PC.",
-                    &mut sh.settings.breach_check,
-                );
-                widgets::divider(ui);
-                toggle_row(
-                    ui,
-                    "Email breach lookup without asking each time",
-                    "Sends the email address you check to xposedornot.com.",
-                    &mut sh.settings.email_lookup_ack,
-                );
+                self.exposure_settings(ui, sh);
                 widgets::divider(ui);
                 toggle_row(
                     ui,

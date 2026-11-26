@@ -1,6 +1,6 @@
 [package]
 name = "keepforge"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 description = "An offline password manager for Windows: one encrypted vault file, no account, no cloud"
 authors = ["Zheer Khalid (https://zheer.dev)"]
@@ -35,6 +35,7 @@ hkdf = "0.12"
 hmac = "0.12"
 sha2 = "0.10"
 sha1 = "0.10"
+sha3 = "0.10"
 subtle = "2"
 zeroize = { version = "1", features = ["derive"] }
 getrandom = "0.2"

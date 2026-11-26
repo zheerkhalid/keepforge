@@ -301,6 +301,31 @@ pub fn chip(ui: &mut Ui, label: &str, count: Option<usize>, active: bool) -> Res
             Stroke::new(1.0_f32, p.border),
         )
     };
+    // Kurdish, Arabic and other right-to-left text is drawn joined up.
+    if bidi::needs_native(&text) {
+        if let Some(size) = bidi::measure(ui, &text, 13.0, false) {
+            let (rect, resp) =
+                ui.allocate_exact_size(vec2(size.x + 24.0, 30.0_f32.max(size.y)), Sense::click());
+            let fill = if resp.hovered() && !active {
+                p.hover
+            } else {
+                fill
+            };
+            ui.painter().rect_filled(rect, CornerRadius::same(15), fill);
+            ui.painter()
+                .rect_stroke(rect, CornerRadius::same(15), stroke, StrokeKind::Inside);
+            bidi::paint(
+                ui,
+                rect.shrink2(vec2(12.0, 0.0)),
+                &text,
+                13.0,
+                false,
+                fg,
+                false,
+            );
+            return resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        }
+    }
     let b = egui::Button::new(RichText::new(text).size(13.0).color(fg))
         .fill(fill)
         .stroke(stroke)

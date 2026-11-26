@@ -355,6 +355,9 @@ pub struct Vault {
     pub folders: Vec<Folder>,
     pub items: Vec<Item>,
     pub service_keys: Vec<ServiceKey>,
+    /// Cached Exposure check results (JSON, see `exposure::Cache`). Inside the
+    /// encrypted payload like everything else; empty in older vaults.
+    pub exposure: String,
 }
 
 impl Vault {
@@ -484,6 +487,54 @@ impl Vault {
             add(&i.username);
             for f in i.fields.iter().filter(|f| !f.hidden) {
                 add(&f.value);
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Distinct user names of logins that are not email addresses.
+    pub fn usernames(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for i in self
+            .items
+            .iter()
+            .filter(|i| i.kind == Kind::Login && !i.in_trash())
+        {
+            let u = i.username.trim();
+            // Card and library numbers are not user names worth looking up.
+            if u.chars().count() >= 3
+                && u.chars().count() <= 64
+                && !u.chars().all(|c| c.is_ascii_digit())
+                && !u.contains('@')
+                && !u
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control() || c == '/')
+                && !out.iter().any(|o| o.eq_ignore_ascii_case(u))
+            {
+                out.push(u.to_string());
+            }
+        }
+        out.sort_by_key(|u| u.to_lowercase());
+        out
+    }
+
+    /// Distinct phone numbers (with a country code) from visible fields
+    /// labelled as phone numbers.
+    pub fn phones(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for i in self.items.iter().filter(|i| !i.in_trash()) {
+            for f in i.fields.iter().filter(|f| {
+                !f.hidden && {
+                    let l = f.label.to_lowercase();
+                    l.contains("phone") || l.contains("mobile")
+                }
+            }) {
+                if let Some(p) = crate::exposure::normalize_phone(&f.value) {
+                    if !out.contains(&p) {
+                        out.push(p);
+                    }
+                }
             }
         }
         out.sort();

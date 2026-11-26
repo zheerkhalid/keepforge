@@ -14,10 +14,22 @@ EFF Large Wordlist for Passphrases
   Licensed under the Creative Commons Attribution 3.0 United States License
   (CC BY 3.0 US): https://creativecommons.org/licenses/by/3.0/us/
 
+WhatsMyName site list
+  KeepForge embeds an unchanged copy of "wmn-data.json" from the
+  WhatsMyName project (res/wmn-data.json), used by the Exposure check to
+  see on which websites the user's own user name is registered.
+  Copyright (C) 2015-2026 Micah Hoffman and contributors.
+  https://github.com/WebBreacher/WhatsMyName
+  Licensed under the Creative Commons Attribution-ShareAlike 4.0
+  International License (CC BY-SA 4.0):
+  https://creativecommons.org/licenses/by-sa/4.0/
+  The file is distributed under that licence, not under KeepForge's MIT
+  licence.
+
 Rust crates
   KeepForge is built with open-source Rust crates, among them the RustCrypto
   crates (argon2, chacha20poly1305, hkdf, hmac, sha2, sha1, blake2, subtle,
-  zeroize), zxcvbn, ciborium, serde, qrcode, eframe / egui, image, rfd and the
+  sha3, zeroize), zxcvbn, ciborium, serde, qrcode, eframe / egui, image, rfd and the
   windows crate. Each is used under its own licence (MIT and/or Apache-2.0 for
   most); see Cargo.lock for the exact versions and each crate for its terms.
 
@@ -31,8 +43,24 @@ Optional online services (used only when you start a check)
 Pwned Passwords range API by Have I Been Pwned
   https://haveibeenpwned.com/Passwords
 
-XposedOrNot breach data API
+Have I Been Pwned breach data (breaches, pastes, list of breached sites)
+  https://haveibeenpwned.com  Breach data is licensed under CC BY 4.0.
+  Breached-account lookups need the user's own API key.
+
+XposedOrNot breach data and password APIs
   https://xposedornot.com  (API documentation: https://xposedornot.com/api_doc)
+
+LeakCheck public API ("Powered by LeakCheck")
+  https://leakcheck.io
+
+Hudson Rock free infostealer lookup (Cavalier OSINT API)
+  https://www.hudsonrock.com/free-tools
+
+Leak-Lookup API (needs the user's own key)
+  https://leak-lookup.com
+
+Enzoic Passwords API (needs the user's own key)
+  https://www.enzoic.com
 
 iknowwhatyoudownload.com Peer API (needs your own key from the service)
   https://iknowwhatyoudownload.com/en/api/

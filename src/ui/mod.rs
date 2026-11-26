@@ -5,6 +5,7 @@ mod demo_views;
 mod detail;
 mod dialogs;
 mod edit;
+mod exposure;
 mod main_view;
 mod pages;
 mod start;

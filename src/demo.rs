@@ -2,6 +2,8 @@
 //! PC it runs on, nothing is written to disk and nothing is sent anywhere.
 
 use crate::breach::Breach;
+use crate::exposure::sites::{SiteHit, SiteScan};
+use crate::exposure::{Answer, Cache, Finding, FindingKind, QueryKind, SourceError, SourceId};
 use crate::model::{CustomField, Item, Kind, RecoveryCode, Vault};
 use crate::secret::{Protected, SessionKey};
 use crate::torrent::{ContentClass, PeerItem, PeerReport};
@@ -351,6 +353,7 @@ pub fn breaches() -> Vec<Breach> {
             industry: "Photo hosting".into(),
             password_risk: "easytocrack".into(),
             description: "Photo Cloud, an invented photo hosting service, had its user database copied in 2021. The data included email addresses, user names and weakly protected passwords.".into(),
+            reference: String::new(),
         },
         Breach {
             name: "PixelForum".into(),
@@ -361,6 +364,7 @@ pub fn breaches() -> Vec<Breach> {
             industry: "Community".into(),
             password_risk: "plaintext".into(),
             description: "Pixel Forum, an invented hobby forum, exposed its member list in 2019, including passwords stored without protection.".into(),
+            reference: String::new(),
         },
         Breach {
             name: "ExampleShop".into(),
@@ -371,8 +375,184 @@ pub fn breaches() -> Vec<Breach> {
             industry: "Retail".into(),
             password_risk: "unknown".into(),
             description: "An invented online shop leaked order records in 2017: names, postal addresses and phone numbers. Passwords were not part of it.".into(),
+            reference: String::new(),
         },
     ]
+}
+
+/// The online sources switched on in the demo.
+pub const DEMO_SOURCES: [&str; 7] = [
+    "xposedornot",
+    "leakcheck",
+    "hudsonrock",
+    "hibp-domain",
+    "hibp",
+    "whatsmyname",
+    "pw-xposedornot",
+];
+
+fn found(
+    source: SourceId,
+    name: &str,
+    domain: &str,
+    date: &str,
+    data: &[&str],
+    text: &str,
+) -> Finding {
+    Finding {
+        source,
+        kind: FindingKind::Breach,
+        name: name.into(),
+        domain: domain.into(),
+        date: date.into(),
+        data: data.iter().map(|d| d.to_string()).collect(),
+        description: text.into(),
+        ..Default::default()
+    }
+}
+
+/// Invented answers of the Exposure check sources. The demo never goes online.
+pub fn exposure_answer(
+    source: SourceId,
+    kind: QueryKind,
+    value: &str,
+) -> Result<Answer, SourceError> {
+    use QueryKind::*;
+    use SourceId::*;
+    let of = |findings: Vec<Finding>| {
+        Ok(Answer {
+            findings,
+            note: String::new(),
+        })
+    };
+    match (source, kind, value) {
+        (Hibp, _, _) | (LeakLookup, _, _) => Err(SourceError::NeedsKey),
+        (XposedOrNot, Email, DEMO_EMAIL) => of(breaches()
+            .into_iter()
+            .map(|b| Finding {
+                source: XposedOrNot,
+                kind: FindingKind::Breach,
+                date: b.year.map(|y| y.to_string()).unwrap_or_default(),
+                records: b.records,
+                facts: vec![b.industry.clone()],
+                password_risk: b.password_risk.clone(),
+                name: b.name,
+                domain: b.domain,
+                data: b.exposed,
+                description: b.description,
+                ..Default::default()
+            })
+            .collect()),
+        (LeakCheck, Email, DEMO_EMAIL) => Ok(Answer {
+            findings: vec![
+                found(LeakCheck, "PhotoCloud.example", "", "2021-03", &[], ""),
+                found(LeakCheck, "Shop.example", "", "2017-08", &[], ""),
+                found(LeakCheck, "TravelBooker.example", "", "2023-05", &[], ""),
+            ],
+            note: "Across these breaches LeakCheck saw: passwords, names, phone numbers. It does not say which breach held what.".into(),
+        }),
+        (HudsonRock, Email, DEMO_EMAIL) => of(vec![Finding {
+            source: HudsonRock,
+            kind: FindingKind::Stealer,
+            name: "Infostealer infection".into(),
+            date: "2025-02-14".into(),
+            data: vec!["Passwords".into(), "Browser cookies".into(), "Usernames".into()],
+            description: "Malware on a computer linked to this value copied the logins and cookies saved there.".into(),
+            facts: vec![
+                "System: Windows 10 Home".into(),
+                "Computer: LAPTOP-EXAMPLE".into(),
+                "Malware: an invented stealer".into(),
+                "38 saved logins taken (0 work)".into(),
+            ],
+            ..Default::default()
+        }]),
+        (LeakCheck, Username, "alex_m") => of(vec![found(LeakCheck, "PixelForum.example", "", "2019-11", &[], "")]),
+        (HibpDomain, Domain, "photocloud.example") => of(vec![Finding {
+            source: HibpDomain,
+            kind: FindingKind::SiteBreach,
+            ..found(HibpDomain, "Photo Cloud", "photocloud.example", "2021-03-12", &["Email addresses", "Passwords", "Usernames"], "In March 2021, the invented Photo Cloud service had its user database copied.")
+        }]),
+        _ => of(Vec::new()),
+    }
+}
+
+/// Invented "where is this user name registered" hits.
+pub fn site_hits(username: &str) -> Vec<SiteHit> {
+    if username != "alex_m" {
+        return Vec::new();
+    }
+    [
+        ("GitHub", "coding", "https://github.com/"),
+        ("Reddit", "social", "https://www.reddit.com/user/"),
+        ("Chess.com", "gaming", "https://www.chess.com/member/"),
+        ("Duolingo", "hobby", "https://www.duolingo.com/profile/"),
+        ("SoundCloud", "music", "https://soundcloud.com/"),
+    ]
+    .iter()
+    .map(|(name, cat, url)| SiteHit {
+        name: name.to_string(),
+        category: cat.to_string(),
+        url: format!("{url}{username}"),
+    })
+    .collect()
+}
+
+/// Invented breaches of sites saved in the demo vault (as if from the
+/// public list of breached sites).
+pub fn site_breaches() -> Vec<Finding> {
+    vec![
+        Finding {
+            kind: FindingKind::SiteBreach,
+            ..found(
+                SourceId::HibpDomain,
+                "Photo Cloud",
+                "photocloud.example",
+                "2021-03-12",
+                &["Email addresses", "Passwords", "Usernames"],
+                "In March 2021, the invented Photo Cloud service had its user database copied.",
+            )
+        },
+        Finding {
+            kind: FindingKind::SiteBreach,
+            ..found(
+                SourceId::HibpDomain,
+                "Pixel Forum",
+                "pixelforum.example",
+                "2019-11-02",
+                &["Email addresses", "IP addresses", "Passwords"],
+                "The invented Pixel Forum exposed its member list in November 2019.",
+            )
+        },
+    ]
+}
+
+/// A demo cache as if the address and a user name had been checked.
+pub fn exposure_cache(now: i64) -> Cache {
+    let mut c = Cache::default();
+    for (kind, value) in [
+        (QueryKind::Username, "alex_m"),
+        (QueryKind::Email, DEMO_EMAIL),
+    ] {
+        let r = c.record_mut(kind, value, now - 3600);
+        r.checked = now - 3600;
+        for source in SourceId::ALL {
+            if source.supports(kind) && (source.key_name().is_none() || source == SourceId::Hibp) {
+                r.apply(source, exposure_answer(source, kind, value));
+            }
+        }
+    }
+    let r = c.record_mut(QueryKind::Username, "alex_m", now);
+    r.sites = Some(SiteScan {
+        when: now - 3500,
+        asked: 557,
+        unclear: 61,
+        found: site_hits("alex_m"),
+        complete: true,
+    });
+    c.site_breaches = site_breaches();
+    c.sites_checked = now - 3600;
+    c.last_all = now - 3600;
+    c
 }
 
 /// An invented, harmless torrent exposure result.
@@ -459,5 +639,16 @@ mod tests {
         let flagged = crate::breach::items_to_change(&v, breaches().iter());
         assert_eq!(flagged.len(), 2);
         assert!(!peer_report().items.is_empty());
+        // The demo exposure results line up with demo items too.
+        let cache = exposure_cache(1_800_000_000);
+        let exposures = cache.all_exposures();
+        assert!(exposures
+            .iter()
+            .any(|(_, _, e)| e.kind == FindingKind::Stealer));
+        let merged: Vec<crate::exposure::Exposure> =
+            exposures.into_iter().map(|(_, _, e)| e).collect();
+        let change = crate::exposure::items_to_change(&v, merged.iter());
+        assert!(change.len() >= 2, "{change:?}");
+        assert!(crate::exposure::breaches_for_vault(&v, &site_breaches()).len() == 2);
     }
 }

@@ -13,7 +13,8 @@ const USAGE: &str = "KeepForge
                                    written or sent
   KeepForge.exe --screenshot <png> render the window to a PNG and exit (implies --demo)
         [--view welcome|create|unlock|main|card|wifi|kurdish|recent|edit|generator|
-                generator-history|health|breach|authenticator|tools|tools-names|
+                generator-history|health|exposure|exposure-username|exposure-domain|
+                exposure-password|exposure-results|dialog-online|settings-online|authenticator|tools|tools-names|
                 tools-encrypt|tools-checksum|tools-qr|tools-shred|tools-torrent|
                 settings|trash|about] [--light]
   KeepForge.exe --selftest         create a vault in a temporary folder, exercise it end
@@ -22,9 +23,10 @@ const USAGE: &str = "KeepForge
                                    a live check of the clipboard code; the text on the
                                    clipboard is saved first and restored afterwards
   KeepForge.exe --hardening-report apply the process protections and print how each went
-  KeepForge.exe --selftest-online  the only command that uses the network: one Pwned Passwords
-                                   range query for the test password \"password\" and one
-                                   XposedOrNot lookup of test@example.com
+  KeepForge.exe --selftest-online  the only command that uses the network: asks every optional
+                                   online source once with test data only (the test password
+                                   \"password\", test@example.com, HIBP's documented test
+                                   accounts and test key, an invented user name)
   KeepForge.exe --idle-lock-secs N with --demo: auto-lock after N idle seconds (testing)
   KeepForge.exe --block-dynamic-code
                                    with --demo: try the optional dynamic-code policy (testing)";
@@ -192,44 +194,124 @@ fn main() -> eframe::Result<()> {
     result
 }
 
-/// The two optional online services, each asked once with neutral test data.
+/// Every optional online source, each asked once with neutral test data:
+/// the test password "password", reserved example addresses, the test
+/// accounts and test key that Have I Been Pwned documents for this purpose,
+/// and an invented user name. Nothing from any vault is used.
 fn online_check() -> bool {
-    println!(
-        "Asking api.pwnedpasswords.com for hash range 5BAA6 (the test password \"password\")..."
+    use keepforge::exposure::password::{self, PwSource};
+    use keepforge::exposure::{sources, Https, QueryKind, SourceId};
+    let t = Https;
+    let mut ok = true;
+    let mut report = |what: &str, result: Result<String, String>, required: bool| {
+        match &result {
+            Ok(text) => println!("  {what}: {text}"),
+            Err(e) => println!("  {what}: FAILED {e}"),
+        }
+        if result.is_err() && required {
+            ok = false;
+        }
+    };
+    println!("Passwords (only a hash prefix is sent):");
+    for source in [PwSource::PwnedPasswords, PwSource::XposedOrNot] {
+        report(
+            source.name(),
+            password::check(source, &t, "password", None)
+                .map(|n| format!("\"password\" seen {n} times"))
+                .map_err(|e| e.to_string()),
+            true,
+        );
+    }
+    let no_wait = || std::thread::sleep(std::time::Duration::from_millis(1500));
+    let lookups: [(SourceId, QueryKind, &str, Option<&str>); 7] = [
+        (
+            SourceId::XposedOrNot,
+            QueryKind::Email,
+            "test@example.com",
+            None,
+        ),
+        (
+            SourceId::LeakCheck,
+            QueryKind::Email,
+            "test@example.com",
+            None,
+        ),
+        (
+            SourceId::LeakCheck,
+            QueryKind::Username,
+            "keepforge-selftest-zz9",
+            None,
+        ),
+        (
+            SourceId::HudsonRock,
+            QueryKind::Username,
+            "keepforge-selftest-zz9",
+            None,
+        ),
+        (SourceId::HibpDomain, QueryKind::Domain, "adobe.com", None),
+        // HIBP's documented test key and test account.
+        (
+            SourceId::Hibp,
+            QueryKind::Email,
+            "account-exists@hibp-integration-tests.com",
+            Some("00000000000000000000000000000000"),
+        ),
+        (
+            SourceId::Hibp,
+            QueryKind::Email,
+            "multiple-breaches@hibp-integration-tests.com",
+            Some("00000000000000000000000000000000"),
+        ),
+    ];
+    println!("Breach sources:");
+    for (source, kind, value, key) in lookups {
+        std::thread::sleep(source.gap());
+        let result = sources::check(source, &t, kind, value, key, &no_wait)
+            .map(|a| {
+                let names: Vec<String> =
+                    a.findings.iter().take(3).map(|f| f.name.clone()).collect();
+                format!(
+                    "{} found{}{}",
+                    a.findings.len(),
+                    if names.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (first: {})", names.join(", "))
+                    },
+                    if a.note.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" [{}]", a.note)
+                    }
+                )
+            })
+            .map_err(|e| e.to_string());
+        report(
+            &format!("{} {} {value}", source.name(), kind.label()),
+            result,
+            true,
+        );
+    }
+    println!("Where a user name is registered (5 sites, invented name):");
+    let sites: Vec<keepforge::exposure::sites::Site> =
+        keepforge::exposure::sites::parse(keepforge::exposure::sites::DATA)
+            .into_iter()
+            .filter(|s| s.usable(false))
+            .take(5)
+            .collect();
+    let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = events.clone();
+    keepforge::exposure::sites::scan(
+        "keepforge-selftest-zz9",
+        sites,
+        std::sync::Arc::new(Https),
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        2,
+        std::sync::Arc::new(move |e| sink.lock().unwrap().push(e)),
     );
-    let (prefix, suffix) = keepforge::hibp::hash_parts("password");
-    let pwned = match keepforge::hibp::fetch_range(&prefix) {
-        Ok(body) => {
-            let lines = body.lines().count();
-            let count = keepforge::hibp::parse_range(&body, &suffix);
-            println!("  {lines} lines received (padded); \"password\" seen {count} times");
-            count > 1_000_000
-        }
-        Err(e) => {
-            println!("  failed: {e}");
-            false
-        }
-    };
-    println!("Asking api.xposedornot.com about test@example.com...");
-    let email = match keepforge::breach::lookup("test@example.com") {
-        Ok(keepforge::breach::EmailResult::Found(list)) => {
-            println!(
-                "  found in {} breaches; first: {}",
-                list.len(),
-                list[0].name
-            );
-            true
-        }
-        Ok(keepforge::breach::EmailResult::NotFound) => {
-            println!("  not found");
-            true
-        }
-        Err(e) => {
-            println!("  failed: {e}");
-            false
-        }
-    };
-    pwned && email
+    let last = events.lock().map(|e| e.last().cloned()).ok().flatten();
+    report("WhatsMyName sites", Ok(format!("{last:?}")), false);
+    ok
 }
 
 fn window_icon() -> egui::IconData {

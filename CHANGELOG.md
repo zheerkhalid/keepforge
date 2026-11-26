@@ -3,6 +3,39 @@
 All notable changes to KeepForge are listed here, newest first.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-11-26
+
+Vaults made with 1.0 and 1.1 open as they are. The vault gains one field, the saved Exposure check results; older versions ignore it.
+
+### Added
+
+- **Exposure check**, a new page that replaces *Breach lookup*. Check an **email address, user name, phone number, domain or password** against known breaches, pastes and **infostealer logs** (malware that copies the logins saved on a computer).
+- **Several services instead of one.** Built in and free: XposedOrNot, LeakCheck's public API, Hudson Rock's infostealer lookup and Have I Been Pwned's list of breached sites. With a key of your own (pasted in Settings and kept inside the encrypted vault): Have I Been Pwned (breaches, pastes, and stealer-log sites where your plan includes them), Leak-Lookup (the only way to check a phone number) and Enzoic (passwords).
+- **One list per breach.** When several services report the same breach, it is shown once: the site, when it happened, what leaked (passwords, phone numbers, addresses…), which services reported it, a link to details, a plain risk level (low, medium, high, act now) and **what to do**: change the password there, turn on two-step verification, watch for scam calls, scan the computer for malware.
+- **You can see which services were asked**, what each found, and which failed and why (no key yet, too many lookups, not in your plan).
+- **Linked to your vault.** Each breach shows "You have an account here in KeepForge" with the matching login and whether its password was changed since. The security dashboard lists these logins with the reason, warns when malware stole saved logins, and the item itself shows the warning.
+- **Where is my user name registered?** Asks about 550 websites from the WhatsMyName list whether a profile with your user name exists, so you can find accounts you forgot. Six websites at a time, one request each, only after you tick "this is my own user name".
+- **Were the sites in my vault breached?** Downloads the public list of breached sites once and compares it with your saved web addresses on your PC. Nothing about you is sent.
+- **Check all** email addresses, user names and phone numbers in the vault in one go, with progress and Cancel. Each service is asked at its own pace and is left alone after it says "too many requests".
+- **Results are saved** inside the encrypted vault with the date they were checked, so they are still there after the next unlock. Each result can be forgotten.
+- **Optional re-check** when you unlock: weekly, monthly or every 3 months. Off unless you turn it on.
+- **More password checks** for the single password check: XposedOrNot (sends 10 characters of a hash, which the settings explain) and Enzoic with your own key. Like Pwned Passwords, neither ever receives the password or its full hash.
+- `--selftest-online` now asks every free source once with test data only (the test password "password", test@example.com, Have I Been Pwned's documented test accounts and test key, an invented user name).
+
+### Changed
+
+- **Every online source is off until you turn it on.** Settings › Online checks lists each one with exactly what it sends and what it returns; the first time you press Check, a box lets you pick which services to ask. If you had said yes to the email lookup before, XposedOrNot stays on.
+- The sidebar entry *Breach lookup* is now *Exposure check*, and the dashboard's "Breached" list is called "Breached and exposed".
+- `docs/SECURITY.md`, `docs/FORMAT.md` and the README's online checks table describe every source.
+
+### Fixed
+
+- Results of the email lookup were lost when the vault locked; they are now kept with the vault.
+
+### Not included, on purpose
+
+- Services that sell or show leaked passwords, password hashes or other people's records (DeHashed, Snusbase, BreachDirectory, ProxyNova COMB, Intelligence X, LeakCheck's paid API and others), services without an official API (Google Password Checkup, Mozilla Monitor, Cybernews, Avast and similar checkers would need scraping), and business-only services (SpyCloud, Constella, BreachSense). No free service allows checking phone numbers.
+
 ## [1.1.0] - 2026-11-24
 
 Vaults made with 1.0.x open as they are; nothing about the vault file or its encryption has changed.
@@ -52,6 +85,7 @@ Vaults made with 1.0.x open as they are; nothing about the vault file or its enc
 - Import from browser and password manager CSV or JSON exports, encrypted and plain export, rolling backups, merge when two PCs changed the file.
 - Installer and portable ZIP.
 
+[1.2.0]: https://github.com/zheerkhalid/keepforge/releases/tag/v1.2.0
 [1.1.0]: https://github.com/zheerkhalid/keepforge/releases/tag/v1.1.0
 [1.0.1]: https://github.com/zheerkhalid/keepforge/releases/tag/v1.0.1
 [1.0.0]: https://github.com/zheerkhalid/keepforge/releases/tag/v1.0.0

@@ -28,7 +28,7 @@ pub enum Nav {
     Tag(String),
     Trash,
     Health,
-    Breach,
+    Exposure,
     Authenticator,
     Generator,
     Tools,
@@ -137,6 +137,7 @@ pub struct Main {
     pub pwned_cancel: Arc<AtomicBool>,
     pub ranges: Arc<Mutex<crate::hibp::RangeCache>>,
     pub pages: super::pages::PageState,
+    pub exp: super::exposure::ExposureState,
     pub tools: super::tools::Tools,
     pub dialog: Option<Dialog>,
     pub kdf_secs: Option<f64>,
@@ -147,6 +148,7 @@ pub struct Main {
 
 impl Main {
     pub fn new(v: OpenVault, kdf_secs: Option<f64>) -> Main {
+        let exp = super::exposure::ExposureState::new(&v.vault);
         Main {
             v,
             rev: 1,
@@ -176,6 +178,7 @@ impl Main {
             pwned_cancel: Arc::new(AtomicBool::new(false)),
             ranges: Arc::new(Mutex::new(crate::hibp::RangeCache::default())),
             pages: super::pages::PageState::default(),
+            exp,
             tools: super::tools::Tools::default(),
             dialog: None,
             kdf_secs,
@@ -196,10 +199,8 @@ impl Main {
             }
         }
         self.pwned_done = true;
-        self.pages.email_result(
-            crate::demo::DEMO_EMAIL.to_string(),
-            Ok(crate::breach::EmailResult::Found(crate::demo::breaches())),
-        );
+        self.exp.cache = crate::demo::exposure_cache(crate::util::now());
+        self.exp.generation += 1;
     }
 
     /// A message that arrives while the program is closing: only the result
@@ -234,6 +235,7 @@ impl Main {
 
     /// Call after every change to the vault: refreshes caches and saves.
     pub fn changed(&mut self, ctx: &egui::Context, sh: &mut Shared) {
+        self.exposure_sync();
         self.rev += 1;
         self.list_cache = None;
         self.request_save(ctx, sh, false);
@@ -322,13 +324,14 @@ impl Main {
             }
             Msg::NewSealer(result, secs) => self.new_sealer(ctx, sh, result, secs),
             Msg::ImportLoaded(result) => self.import_loaded(sh, result),
-            Msg::Email(email, result) => self.pages.email_result(email, result),
-            Msg::EmailDone => self.pages.email_done(),
-            Msg::Peer(result) => self.pages.peer_result(result),
-            Msg::Tool(super::tools::ToolMsg::SinglePwned(result)) => {
-                self.pages.pw_check_busy = false;
-                self.pages.pw_check_result = Some(result);
+            Msg::Exposure(e) => self.exposure_event(ctx, sh, e),
+            Msg::Sites(e) => self.sites_event(ctx, sh, e),
+            Msg::SiteList(result) => self.site_list_arrived(ctx, sh, result),
+            Msg::PwChecked(results) => {
+                self.exp.pw_busy = false;
+                self.exp.pw_results = results;
             }
+            Msg::Peer(result) => self.pages.peer_result(result),
             Msg::Tool(m) => self.tools.message(sh, m),
             Msg::Calibrated(_) | Msg::Unlocked(..) | Msg::Created(..) | Msg::Toast(..) => {}
         }
@@ -817,6 +820,7 @@ impl Main {
             return None;
         }
         let mut go = self.handle_keys(ctx, sh);
+        self.exposure_auto(ctx, sh);
         let now = ctx.input(|i| i.time);
         self.reveal.retain(|_, until| *until > now);
 
@@ -859,7 +863,7 @@ impl Main {
                 )
                 .show(ctx, |ui| match self.nav {
                     Nav::Health => self.health_ui(ui, sh),
-                    Nav::Breach => self.breach_ui(ui, sh),
+                    Nav::Exposure => self.exposure_ui(ui, sh),
                     Nav::Authenticator => self.authenticator_ui(ui, sh),
                     Nav::Generator => self.generator_ui(ui, sh),
                     Nav::Tools => self.tools_ui(ui, sh),
@@ -1190,7 +1194,7 @@ impl Main {
                 widgets::divider(ui);
                 ui.add_space(4.0);
                 row(ui, Nav::Health, Icon::HEALTH, "Security dashboard", None);
-                row(ui, Nav::Breach, Icon::SHIELD, "Breach lookup", None);
+                row(ui, Nav::Exposure, Icon::SHIELD, "Exposure check", None);
                 row(ui, Nav::Authenticator, Icon::PHONE, "Authenticator", None);
                 row(ui, Nav::Generator, Icon::SHUFFLE, "Generator", None);
                 row(ui, Nav::Tools, Icon::REPAIR, "Tools", None);

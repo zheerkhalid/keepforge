@@ -29,6 +29,8 @@ pub struct Breach {
     pub industry: String,
     pub password_risk: String,
     pub description: String,
+    /// A link to a report about the breach, as given by the service.
+    pub reference: String,
 }
 
 impl Breach {
@@ -115,6 +117,8 @@ struct Detail {
     #[serde(default)]
     password_risk: String,
     #[serde(default)]
+    references: String,
+    #[serde(default)]
     xposed_data: String,
     #[serde(default)]
     xposed_date: serde_json::Value,
@@ -184,6 +188,7 @@ pub fn parse_analytics(status: u32, body: &[u8]) -> Result<EmailResult, BreachEr
             industry: util::clean_remote(&d.industry, 60),
             password_risk: util::clean_remote(&d.password_risk, 40),
             description: util::clean_remote(&d.details, 600),
+            reference: util::clean_remote(&d.references, 300),
         })
         .filter(|b| !b.name.is_empty())
         .collect();
@@ -234,8 +239,13 @@ fn squash(text: &str) -> String {
 /// Whether a login belongs to the breached site: its URL is on the breached
 /// domain, or its title is the breach's name.
 pub fn item_matches(item: &crate::model::Item, breach: &Breach) -> bool {
-    if !breach.domain.is_empty() {
-        let target = util::base_domain(&breach.domain);
+    site_matches(item, &breach.name, &breach.domain)
+}
+
+/// Whether a login belongs to a site known by `name` and (optionally) `domain`.
+pub fn site_matches(item: &crate::model::Item, name: &str, domain: &str) -> bool {
+    if !domain.is_empty() {
+        let target = util::base_domain(&util::host_of(domain));
         if item
             .urls
             .iter()
@@ -244,8 +254,23 @@ pub fn item_matches(item: &crate::model::Item, breach: &Breach) -> bool {
             return true;
         }
     }
-    // Breach names carry suffixes such as "-2024" or "-Scraped".
-    let name = squash(breach.name.split('-').next().unwrap_or(""));
+    // Breach names carry suffixes such as "-2024" or "-Scraped"; some are a
+    // domain ("Wattpad.com"), whose first label is the site's name.
+    let first = name.split('-').next().unwrap_or("");
+    let first = if domain.is_empty() && first.contains('.') {
+        let host = util::base_domain(&first.to_lowercase());
+        if item
+            .urls
+            .iter()
+            .any(|u| util::base_domain(&util::host_of(u)) == host)
+        {
+            return true;
+        }
+        host.split('.').next().unwrap_or("").to_string()
+    } else {
+        first.to_string()
+    };
+    let name = squash(&first);
     let title = squash(&item.title);
     name.len() >= 4 && (title == name || (name.len() >= 5 && title.starts_with(&name)))
 }

@@ -5,7 +5,6 @@ use super::main_view::Main;
 use super::start::{CreateState, UnlockState, WelcomeState};
 use super::theme::{self, pal_ctx, semibold, Icon};
 use super::widgets;
-use crate::breach::{BreachError, EmailResult};
 use crate::clipboard::{self, Pending, Tick};
 use crate::harden::Step;
 use crate::health::Report;
@@ -54,8 +53,10 @@ pub enum Msg {
     Health(u64, Report),
     Pwned(Id, Result<u64, String>),
     PwnedDone,
-    Email(String, Result<EmailResult, BreachError>),
-    EmailDone,
+    Exposure(crate::exposure::Event),
+    Sites(crate::exposure::sites::SiteEvent),
+    SiteList(Result<Vec<crate::exposure::Finding>, String>),
+    PwChecked(Vec<(crate::exposure::password::PwSource, Result<u64, String>)>),
     Peer(Result<PeerReport, PeerError>),
     NewSealer(Result<Sealer, VaultError>, f64),
     ImportLoaded(Result<crate::import::Loaded, String>),

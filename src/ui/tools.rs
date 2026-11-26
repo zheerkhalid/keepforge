@@ -31,7 +31,6 @@ pub enum Tab {
 }
 
 pub enum ToolMsg {
-    SinglePwned(Result<u64, String>),
     TesterPwned(Result<u64, String>),
     Checksum(Result<Option<String>, String>),
     Kfx(Result<String, String>),
@@ -170,7 +169,6 @@ impl Tools {
                 self.test_busy = false;
                 self.test_pwned = Some(r);
             }
-            ToolMsg::SinglePwned(_) => {}
             ToolMsg::Checksum(r) => {
                 self.sum_job = None;
                 self.sum_result = match r {

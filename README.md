@@ -13,7 +13,7 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=for-the-badge&logo=windows11&logoColor=white" />
   <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-B7410E?style=for-the-badge&logo=rust&logoColor=white" />
   <img alt="License" src="https://img.shields.io/badge/License-MIT-10C98F?style=for-the-badge" />
-  <img alt="EXE size" src="https://img.shields.io/badge/EXE-8.3%20MB-3B48D8?style=for-the-badge" />
+  <img alt="EXE size" src="https://img.shields.io/badge/EXE-8.5%20MB-3B48D8?style=for-the-badge" />
 </p>
 
 <p>
@@ -22,7 +22,7 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
   <img alt="Offline" src="https://img.shields.io/badge/works-fully%20offline-10C98F?style=flat-square" />
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-10C98F?style=flat-square&logo=shield&logoColor=white" />
   <img alt="Setup and portable" src="https://img.shields.io/badge/setup%20%2B%20portable-no%20runtimes-10C98F?style=flat-square" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-99%20passing-10C98F?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-125%20passing-10C98F?style=flat-square" />
   <img alt="Made by Zheer Khalid" src="https://img.shields.io/badge/made%20by-Zheer%20Khalid-FF5A4E?style=flat-square" />
 </p>
 
@@ -91,7 +91,7 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
 - Weak, reused and old passwords at a glance
 - Incomplete logins, unencrypted `http://` addresses and items about to expire
 - **Leaked password check** against Pwned Passwords (k-anonymity: only 5 characters of a hash leave your PC)
-- **Email breach lookup**: which known breaches include your address
+- **Exposed accounts** from the Exposure check, with the reason, and a warning when malware stole saved logins
 - Recovery-code tracking and a printable emergency sheet
 
 </td>
@@ -119,6 +119,20 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
 
 </td>
 </tr>
+<tr>
+<td colspan="2" valign="top">
+
+### 🕵️ Exposure check
+- **Email, user name, phone, domain and password** in one page: is it in known breaches, pastes or **infostealer logs**?
+- Asks several services and merges their answers into **one list per breach**: the site, when, what leaked (passwords, phone numbers, addresses…), which services reported it, a link to details, a plain-language risk level and **what to do**
+- **Linked to your vault**: "You have an account here in KeepForge: change its password", also on the item itself and in the security dashboard
+- **Where is my user name registered?** Checks about 550 websites from the WhatsMyName list for accounts you may have forgotten (your own user name only)
+- **Were the sites in my vault breached?** Compares your saved web addresses with the public list of breached sites on your PC; nothing about you is sent
+- **Check all** email addresses, user names and phone numbers in the vault in one go, at each service's own pace; results are saved in the vault with the date, and an optional re-check (off by default)
+- Free sources built in (Have I Been Pwned site list, XposedOrNot, LeakCheck, Hudson Rock); paste your own key for Have I Been Pwned, Leak-Lookup or Enzoic. **Every source is off until you turn it on**, and shows exactly what it sends
+
+</td>
+</tr>
 </table>
 
 ## 🖼️ Screenshots
@@ -133,28 +147,40 @@ No account, no cloud, no telemetry: the vault is a single file you own, encrypte
 <td width="50%" align="center"><b>Generator</b><br><img src="docs/screenshots/generator.png" alt="Generator" /></td>
 </tr>
 <tr>
-<td width="50%" align="center"><b>Email breach lookup</b><br><img src="docs/screenshots/breach-lookup.png" alt="Breach lookup" /></td>
+<td width="50%" align="center"><b>Exposure check</b><br><img src="docs/screenshots/exposure.png" alt="Exposure check for an email address" /></td>
+<td width="50%" align="center"><b>Breaches linked to saved logins</b><br><img src="docs/screenshots/exposure-results.png" alt="Breach results with what to do and the matching saved login" /></td>
+</tr>
+<tr>
+<td width="50%" align="center"><b>Where a user name is registered</b><br><img src="docs/screenshots/exposure-username.png" alt="User name check" /></td>
+<td width="50%" align="center"><b>Password check (k-anonymity)</b><br><img src="docs/screenshots/exposure-password.png" alt="Password check" /></td>
+</tr>
+<tr>
+<td width="50%" align="center"><b>You choose which services to ask</b><br><img src="docs/screenshots/exposure-sources.png" alt="Choosing online sources" /></td>
+<td width="50%" align="center"><b>Online sources and keys</b><br><img src="docs/screenshots/exposure-settings.png" alt="Online check settings" /></td>
+</tr>
+<tr>
 <td width="50%" align="center"><b>Authenticator</b><br><img src="docs/screenshots/authenticator.png" alt="Authenticator" /></td>
-</tr>
-<tr>
 <td width="50%" align="center"><b>Tools</b><br><img src="docs/screenshots/tools.png" alt="Tools" /></td>
+</tr>
+<tr>
 <td width="50%" align="center"><b>Torrent exposure check</b><br><img src="docs/screenshots/tools-torrent.png" alt="Torrent exposure check" /></td>
-</tr>
-<tr>
 <td width="50%" align="center"><b>Create a vault</b><br><img src="docs/screenshots/create-vault.png" alt="Create vault" /></td>
+</tr>
+<tr>
 <td width="50%" align="center"><b>Settings</b><br><img src="docs/screenshots/settings.png" alt="Settings" /></td>
-</tr>
-<tr>
 <td width="50%" align="center"><b>Card item</b><br><img src="docs/screenshots/card.png" alt="Card item" /></td>
-<td width="50%" align="center"><b>Light theme</b><br><img src="docs/screenshots/light-theme.png" alt="Light theme" /></td>
 </tr>
 <tr>
+<td width="50%" align="center"><b>Light theme</b><br><img src="docs/screenshots/light-theme.png" alt="Light theme" /></td>
 <td width="50%" align="center"><b>Kurdish and Arabic text</b><br><img src="docs/screenshots/kurdish.png" alt="An item written in Kurdish" /></td>
+</tr>
+<tr>
 <td width="50%" align="center"><b>Sorted by recently changed</b><br><img src="docs/screenshots/sorted.png" alt="List sorted by recently changed" /></td>
+<td width="50%" align="center"><b>Welcome</b><br><img src="docs/screenshots/welcome.png" alt="Welcome screen" /></td>
 </tr>
 </table>
 
-<sub>Screenshots use the built-in demo vault (<code>KeepForge.exe --demo</code>). Every name, address and breach in them is invented.</sub>
+<sub>Screenshots use the built-in demo vault (<code>KeepForge.exe --demo</code>). Every name, address, breach and infection in them is invented; the demo never goes online.</sub>
 
 ## 📥 Download
 
@@ -164,7 +190,7 @@ Get it from the [**latest release**](https://github.com/zheerkhalid/keepforge/re
 |---|---|
 | `KeepForge-Setup.exe` | Per-user installer (no administrator rights), Start Menu shortcut, `.kfv` file association, uninstaller |
 | `KeepForge-x.y.z-portable-x64.zip` | Portable: unzip and run. Settings stay next to the EXE, so it works from a USB stick |
-| `KeepForge.exe` | The bare 8.3 MB EXE |
+| `KeepForge.exe` | The bare 8.5 MB EXE |
 
 | Key | Action |
 |---|---|
@@ -205,17 +231,27 @@ What changed in each version is in the [**changelog**](CHANGELOG.md).
 
 ## 🌐 Optional online checks
 
-KeepForge works fully offline. Three features contact a service, and only when you click:
+KeepForge works fully offline. The features below contact a service only when you press a button, and **each source is off until you turn it on** (Settings › Online checks, or the box that appears the first time you press Check). Nothing from your vault is sent except the one value you check.
 
-| Feature | Service | What is sent |
-|---|---|---|
-| Leaked password check | [Pwned Passwords](https://haveibeenpwned.com/Passwords) | The first 5 characters of the password's SHA-1 hash. Never the password |
-| Email breach lookup | [XposedOrNot](https://xposedornot.com) | The email address you check |
-| Torrent exposure check | [iknowwhatyoudownload.com](https://iknowwhatyoudownload.com/en/api/) | The IP address you enter and your own API key |
+| Source | Checks | What is sent | Key |
+|---|---|---|---|
+| [Pwned Passwords](https://haveibeenpwned.com/Passwords) | Passwords | The first 5 characters of the password's SHA-1 hash. Never the password | Free |
+| [XposedOrNot](https://xposedornot.com) passwords | Passwords | The first 10 characters of the password's Keccak-512 hash (more specific than Pwned Passwords; off by default) | Free |
+| [Enzoic](https://www.enzoic.com) | Passwords | The first 10 characters of the password's SHA-256 hash | Your own |
+| [XposedOrNot](https://xposedornot.com) | Email | The email address you check | Free |
+| [LeakCheck](https://leakcheck.io) public API | Email, user name | The value you check (answers with breach names and dates only) | Free |
+| [Hudson Rock](https://www.hudsonrock.com/free-tools) | Email, user name, domain: infostealer infections | The value you check | Free |
+| [Have I Been Pwned](https://haveibeenpwned.com) site list | Domain; "were the sites in my vault breached?" | The domain you check, or nothing (the public list is downloaded and compared on your PC) | Free |
+| [Have I Been Pwned](https://haveibeenpwned.com/API/Key) | Email: breaches, pastes, stealer-log sites (by plan) | The email address you check | Your own |
+| [Leak-Lookup](https://leak-lookup.com) | Email, user name, phone, domain | The value you check (breach names only are used) | Your own (free key: 10 a day) |
+| [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) site list | Where your user name is registered | Your user name, to the public profile address of about 550 websites | Free, bundled list |
+| [iknowwhatyoudownload.com](https://iknowwhatyoudownload.com/en/api/) | Torrent activity of your own IP address | The IP address you enter | Your own |
 
-Nothing from your vault is ever sent, and nothing is looked up in the background.
+API keys are stored only inside your encrypted vault, never in the settings file. Results are saved in the vault with the date they were checked, so the security dashboard and each item can show "this site lost data after you last changed this password". An optional re-check when you unlock (weekly, monthly or every 3 months) is **off by default**. There is no telemetry.
 
-The torrent exposure check is meant for your own connection (home or VPN address) and needs a free demo key that you request from the service yourself; the key is stored inside your encrypted vault. Results for shared or changing addresses may belong to other people.
+Only services whose terms allow this kind of use and that answer through an official API are used. Services that sell or show leaked passwords, password hashes or other people's records (for example DeHashed, Snusbase, BreachDirectory, ProxyNova COMB, Intelligence X) are deliberately not included, and no website is scraped. Phone numbers can only be checked with a Leak-Lookup key: no free service allows it.
+
+The user-name check and the torrent check are meant for **your own** user name and connection. A user-name match only means a profile page with that name exists, and torrent results for shared or changing addresses may belong to other people.
 
 KeepForge is not affiliated with or endorsed by any of these services.
 
@@ -250,6 +286,8 @@ src/
   clipboard.rs   protected copy and auto-clear
   generator.rs / strength.rs / totp.rs / health.rs
   hibp.rs / breach.rs / torrent.rs / net.rs   the optional online checks
+  exposure/      the Exposure check: sources, password k-anonymity checks,
+                 merging, advice, vault links, the WhatsMyName site scan
   kfx.rs         password-encrypted files
   ui/            the egui interface (ui/bidi.rs draws right-to-left text)
 tests/
@@ -264,6 +302,8 @@ The icon is drawn in code at build time (`build.rs`, using tiny-skia). The C run
 ## 🙏 Credits
 
 - Passphrases use the [EFF Large Wordlist](https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases) (CC BY 3.0 US).
+- The user-name check uses the site list of [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) by Micah Hoffman and contributors (CC BY-SA 4.0), bundled unchanged.
+- Breach data from [Have I Been Pwned](https://haveibeenpwned.com) (CC BY 4.0), [XposedOrNot](https://xposedornot.com), LeakCheck, Hudson Rock, Leak-Lookup and Enzoic.
 - Cryptography comes from the [RustCrypto](https://github.com/RustCrypto) crates; strength estimates from zxcvbn; the interface from [egui](https://github.com/emilk/egui).
 
 See [`NOTICE`](NOTICE) for details.

@@ -137,7 +137,8 @@ What cannot be done, and you should know:
 ## Network use
 
 KeepForge makes **no network connection on its own**: no update check, no
-telemetry, no icon downloads. The installer and the program work on a PC
+telemetry, no icon downloads (the only exception is a periodic re-check you
+can turn on yourself, below). The installer and the program work on a PC
 without internet. All connections go through one small client
 (`src/net.rs`) on top of WinHTTP, the TLS stack that ships with Windows:
 HTTPS only, certificate checks at the system defaults, TLS 1.2 or later, no
@@ -146,15 +147,46 @@ redirects, no cookies, fixed timeouts, capped response size, User-Agent
 strictly, stripped of control characters, cut to length and only ever shown
 as plain text.
 
-Three optional features use it, each only when you click, each with an
-explanation of what is sent before the first use, and each keeping its
-results in memory only until the vault is locked:
+The optional features below use it. Every one of them is **off until you
+turn it on** (Settings › Online checks, or the "Choose which services to
+ask" box the first time you press Check), and each runs only when you press
+a button. The single exception is the optional periodic re-check of the
+Exposure check, which is off by default and, when you turn it on, runs at
+most once per unlock when the last full check is older than the period you
+chose.
 
 | Feature | Sent | To | Not sent |
 |---|---|---|---|
-| Password breach check (dashboard, strength tester, "Check a password") | The first 5 hex characters of the SHA-1 hash of each checked password, with padding requested so response sizes say nothing | `api.pwnedpasswords.com` (Have I Been Pwned, Pwned Passwords range API) | The password, the rest of the hash, user names, site names. The match is made locally; padded (count 0) lines are discarded |
-| Email breach lookup | The email address you check, one request per 1.5 s | `api.xposedornot.com` (XposedOrNot) | Passwords and everything else in the vault. Matching breaches to your saved logins happens locally |
+| Password check with Pwned Passwords (dashboard, strength tester, Exposure check) | The first 5 hex characters of the SHA-1 hash of each checked password, with padding requested so response sizes say nothing | `api.pwnedpasswords.com` (Have I Been Pwned) | The password, the rest of the hash, user names, site names. The match is made locally; padded (count 0) lines are discarded |
+| Password check with XposedOrNot (Exposure check, off by default) | The first 10 hex characters of the password's Keccak-512 hash | `passwords.xposedornot.com` | The password and the rest of the hash. 10 characters are far more specific than Pwned Passwords' 5: few passwords share them, so the service could tell whether you checked a common password. The settings text says so |
+| Password check with Enzoic (your own key) | The first 10 hex characters of the password's SHA-256 hash, and your key | `api.enzoic.com` | The password and the rest of the hash. The service answers with the full hashes in that bucket and the match is made locally |
+| Exposure check: XposedOrNot | The email address you check | `api.xposedornot.com` | Everything else |
+| Exposure check: LeakCheck public API | The email address or user name you check | `leakcheck.io` | Everything else. The public API answers with breach names and months only |
+| Exposure check: Hudson Rock | The email address, user name or domain you check | `cavalier.hudsonrock.com` | Everything else. Its answer contains masked passwords, logins, IP addresses and file paths of the infected computer: KeepForge's parser does not read those fields, so they are never shown or stored |
+| Exposure check: Have I Been Pwned (sites) | The domain you check, or nothing at all for "Compare my saved sites", which downloads the public list of every breach once and compares it with your saved web addresses on this PC | `haveibeenpwned.com` | Your saved web addresses and everything else |
+| Exposure check: Have I Been Pwned (your own key) | The email address you check and your key (breaches, pastes, and stealer-log sites where your plan includes them) | `haveibeenpwned.com` | Everything else |
+| Exposure check: Leak-Lookup (your own key) | The email address, user name, phone number or domain you check, and your key | `leak-lookup.com` | Everything else. Only breach names are read; anything else in an answer is ignored |
+| Where a user name is registered | The user name you check, once to each of about 550 websites (the public profile address from the bundled WhatsMyName list), six at a time | Those websites | Everything else. Sites that need a login, a POST request or a CAPTCHA, or that the list marks as bot-protected, are skipped; no browser identity is faked |
 | Torrent exposure check | The public IP address you type and your own API key, at most one request per 2 s | The iknowwhatyoudownload.com Peer API (host `api.antitor.com` unless you enter another) | Anything from the vault. The key is stored only inside the encrypted vault. Private, loopback, link-local and reserved addresses are refused locally. No bulk lookup, history or monitoring exists |
+
+How the Exposure check keeps to the rules:
+
+- Each source runs on its own thread with its own pause between requests
+  (from 1.5 s up to 13 s for Leak-Lookup's free key); a source that answers
+  "too many requests" twice is not asked again in that run.
+- Keys are stored only in the encrypted vault (`service_keys`), never in the
+  settings file, and are checked for odd characters before use so they
+  cannot inject request headers.
+- Results are saved inside the encrypted vault (the `exposure` field, see
+  `docs/FORMAT.md`) so you can see them later; you can forget any result.
+- Everything that comes back is parsed strictly, cut to length and shown as
+  plain text; links are only opened when you click them, and only `https://`
+  links from a source are kept.
+- Services whose terms forbid this use, that require scraping, or that
+  return leaked passwords, hashes or other people's records (for example
+  DeHashed, Snusbase, BreachDirectory, ProxyNova COMB, Intelligence X) are
+  not used. The research behind these choices is summarised in the 1.2.0
+  changelog entry.
 
 Each service necessarily sees your IP address. The torrent data comes from
 the public DHT and peer exchange, is unconfirmed, and may belong to other

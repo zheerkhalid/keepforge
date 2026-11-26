@@ -156,6 +156,7 @@ pub struct MergeStats {
 /// kept, and where both sides have it the more recently modified one wins.
 pub fn merge_newest(mine: &mut Vault, theirs: Vault) -> MergeStats {
     let mut stats = MergeStats::default();
+    let their_cache = crate::exposure::Cache::load(&theirs);
     for f in theirs.folders {
         if !mine.folders.iter().any(|m| m.id == f.id) {
             mine.folders.push(f);
@@ -178,6 +179,11 @@ pub fn merge_newest(mine: &mut Vault, theirs: Vault) -> MergeStats {
         if mine.service_key(&k.service).is_none() {
             mine.service_keys.push(k);
         }
+    }
+    if their_cache != crate::exposure::Cache::default() {
+        let mut cache = crate::exposure::Cache::load(mine);
+        cache.merge_from(their_cache);
+        cache.store(mine);
     }
     mine.modified = mine.modified.max(theirs.modified);
     stats

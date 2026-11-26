@@ -29,7 +29,9 @@ pub enum ConfirmAction {
 
 /// What the user is about to send to an online service.
 pub enum Online {
-    Emails(Vec<String>),
+    /// Exposure check sources to turn on before running `Pending`:
+    /// (settings code, ticked).
+    Sources(super::exposure::Pending, Vec<(&'static str, bool)>),
     Ip(String),
     Passwords,
 }
@@ -1078,19 +1080,59 @@ impl Main {
                         }
                     }
                 }
+                Dialog::Online(Online::Sources(what, picks), _) => {
+                    ui.set_width(600.0);
+                    title(ui, "Choose which services to ask");
+                    para(ui, &match what {
+                        super::exposure::Pending::Lookup(tasks, _) if tasks.len() == 1 => format!(
+                            "Only the services you tick are asked, over an encrypted (HTTPS) connection, about: {}. Nothing else from your vault is sent. Each service also sees your IP address.",
+                            tasks[0].value
+                        ),
+                        super::exposure::Pending::Lookup(tasks, _) => format!(
+                            "Only the services you tick are asked, over an encrypted (HTTPS) connection, about the {} email addresses, user names and phone numbers in this vault, one at a time. Passwords and everything else stay on this PC. Each service also sees your IP address.",
+                            tasks.len()
+                        ),
+                        _ => "Only what you tick is used, over an encrypted (HTTPS) connection. Each service also sees your IP address.".to_string(),
+                    });
+                    ui.add_space(6.0);
+                    let info = what.candidates();
+                    egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+                        for (code, on) in picks.iter_mut() {
+                            let Some((_, name, sends)) = info.iter().find(|(c, _, _)| c == code) else {
+                                continue;
+                            };
+                            let already = sh.settings.source_on(code);
+                            if already {
+                                *on = true;
+                            }
+                            widgets::checkbox_enabled(ui, on, name, !already);
+                            ui.horizontal(|ui| {
+                                ui.add_space(30.0);
+                                ui.add(egui::Label::new(RichText::new(*sends).size(12.5).color(pal(ui).muted)).wrap());
+                            });
+                            ui.add_space(4.0);
+                        }
+                    });
+                    ui.add_space(4.0);
+                    para(ui, "You can change this at any time in Settings › Online checks. Results are kept inside the encrypted vault so you can see them later.");
+                    ui.add_space(10.0);
+                    let any = picks.iter().any(|(_, on)| *on);
+                    let mut proceed = false;
+                    button_row(ui, |ui| {
+                        proceed = widgets::primary_button(ui, "Turn on and check", any).clicked();
+                        if widgets::ghost_button(ui, "Cancel").clicked() {
+                            close = true;
+                        }
+                    });
+                    if proceed {
+                        close = true;
+                        confirmed = true;
+                    }
+                }
                 Dialog::Online(what, dont_ask) => {
                     ui.set_width(540.0);
                     let (heading, sent, not_sent, service) = match what {
-                        Online::Emails(list) => (
-                            "This lookup goes online",
-                            if list.len() == 1 {
-                                format!("The email address {} is sent to xposedornot.com over an encrypted (HTTPS) connection.", list[0])
-                            } else {
-                                format!("{} email addresses from your vault are sent, one at a time, to xposedornot.com over an encrypted (HTTPS) connection.", list.len())
-                            },
-                            "No passwords and nothing else from your vault are sent.",
-                            "XposedOrNot is an independent breach-notification service. It will see the address and your IP address.",
-                        ),
+                        Online::Sources(..) => unreachable!("drawn above"),
                         Online::Ip(ip) => (
                             "This lookup goes online",
                             format!("The IP address {ip} and your API key are sent to the iknowwhatyoudownload.com Peer API over an encrypted (HTTPS) connection."),
@@ -1161,9 +1203,8 @@ impl Main {
         dont_ask: bool,
     ) {
         match what {
-            Online::Emails(list) => {
-                sh.settings.email_lookup_ack |= dont_ask;
-                self.start_email_lookup(ctx, sh, list);
+            Online::Sources(pending, picks) => {
+                self.exposure_opted_in(ctx, sh, pending, picks);
             }
             Online::Ip(ip) => {
                 sh.settings.ip_lookup_ack |= dont_ask;

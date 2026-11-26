@@ -301,12 +301,12 @@ impl Main {
                         ),
                     );
                 }
-                if self.pages.flagged(&self.v.vault, self.rev).contains(&id) {
+                if let Some((_, why)) = self.exposed_items().into_iter().find(|(i, _)| *i == id) {
                     widgets::banner(
                         ui,
                         Icon::WARNING,
                         p.danger,
-                        "This site was in a data breach after you last changed this password. Change this password.",
+                        &format!("{why}. Change this password (Exposure check)."),
                     );
                 }
                 if let Some(when) = item.expiry() {

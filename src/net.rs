@@ -7,7 +7,7 @@
 
 use std::ffi::c_void;
 use std::time::{Duration, Instant};
-use windows::core::{w, HSTRING, PCWSTR};
+use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Networking::WinHttp::*;
 
 pub const USER_AGENT: &str = "KeepForge";
@@ -65,6 +65,29 @@ pub fn https_get(
     headers: &[&str],
     max_body: usize,
 ) -> Result<Response, NetError> {
+    https_request("GET", host, path, headers, &[], max_body)
+}
+
+/// `POST https://{host}{path}` with a body (the caller sets `Content-Type`).
+pub fn https_post(
+    host: &str,
+    path: &str,
+    headers: &[&str],
+    body: &[u8],
+    max_body: usize,
+) -> Result<Response, NetError> {
+    https_request("POST", host, path, headers, body, max_body)
+}
+
+fn https_request(
+    method: &str,
+    host: &str,
+    path: &str,
+    headers: &[&str],
+    send_body: &[u8],
+    max_body: usize,
+) -> Result<Response, NetError> {
+    let method = HSTRING::from(method);
     let host = HSTRING::from(host);
     let path = HSTRING::from(path);
     let agent = HSTRING::from(USER_AGENT);
@@ -106,7 +129,7 @@ pub fn https_get(
         }
         let request = Handle(WinHttpOpenRequest(
             connect.0,
-            w!("GET"),
+            &method,
             &path,
             PCWSTR::null(),
             PCWSTR::null(),
@@ -131,7 +154,15 @@ pub fn https_get(
 
         let header_text: Vec<u16> = headers.join("\r\n").encode_utf16().collect();
         let header_arg = (!header_text.is_empty()).then_some(&header_text[..]);
-        WinHttpSendRequest(request.0, header_arg, None, 0, 0, 0)
+        let (body_ptr, body_len) = if send_body.is_empty() {
+            (None, 0u32)
+        } else {
+            (
+                Some(send_body.as_ptr() as *const c_void),
+                send_body.len() as u32,
+            )
+        };
+        WinHttpSendRequest(request.0, header_arg, body_ptr, body_len, body_len, 0)
             .map_err(|e| NetError::Unreachable(format!("send: {}", e.message())))?;
         WinHttpReceiveResponse(request.0, std::ptr::null_mut())
             .map_err(|e| NetError::Unreachable(format!("receive: {}", e.message())))?;

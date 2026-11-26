@@ -83,6 +83,12 @@ pub struct Settings {
     pub email_lookup_ack: bool,
     /// "Don't ask again" for the torrent exposure explanation.
     pub ip_lookup_ack: bool,
+    /// Exposure check sources the user has turned on (codes such as
+    /// "xposedornot"). Nothing is on until the user turns it on.
+    pub exposure_sources: Vec<String>,
+    /// Check all vault addresses and user names again when the last full
+    /// check is older than this many days (0 = never; the default).
+    pub exposure_recheck_days: u32,
     /// Block dynamically generated code in this process (takes effect at next start).
     pub block_dynamic_code: bool,
     /// Order of the item list.
@@ -117,6 +123,8 @@ impl Default for Settings {
             breach_check: false,
             email_lookup_ack: false,
             ip_lookup_ack: false,
+            exposure_sources: Vec::new(),
+            exposure_recheck_days: 0,
             block_dynamic_code: false,
             list_sort: SortOrder::Title,
             trash_days: 0,
@@ -129,10 +137,17 @@ pub const RECENT_LIMIT: usize = 8;
 
 impl Settings {
     pub fn load(dir: &Path) -> Settings {
-        let mut s: Settings = std::fs::read_to_string(dir.join("settings.json"))
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
+        let text = std::fs::read_to_string(dir.join("settings.json")).unwrap_or_default();
+        let mut s: Settings = serde_json::from_str(&text).unwrap_or_default();
+        // Before 1.2 the email lookup (XposedOrNot) had a "don't ask again"
+        // switch instead of its own on/off setting: keep it on for those
+        // who had already said yes to it.
+        let older = serde_json::from_str::<serde_json::Value>(&text)
+            .map(|v| v.get("exposure_sources").is_none())
+            .unwrap_or(false);
+        if older && s.email_lookup_ack {
+            s.set_source("xposedornot", true);
+        }
         s.sanitize();
         s
     }
@@ -154,6 +169,36 @@ impl Settings {
         self.reveal_seconds = self.reveal_seconds.clamp(5, 300);
         self.trash_days = self.trash_days.min(3650);
         self.recent.truncate(RECENT_LIMIT);
+        self.exposure_recheck_days = self.exposure_recheck_days.min(365);
+        self.exposure_sources
+            .retain(|c| !c.is_empty() && c.len() <= 40);
+        self.exposure_sources.sort();
+        self.exposure_sources.dedup();
+        self.exposure_sources.truncate(40);
+    }
+
+    /// The code under which Pwned Passwords is switched on: it keeps the
+    /// setting it has had since 1.0.
+    pub const PWNED_CODE: &'static str = "pw-pwnedpasswords";
+
+    /// Whether an online source has been turned on.
+    pub fn source_on(&self, code: &str) -> bool {
+        if code == Self::PWNED_CODE {
+            return self.breach_check;
+        }
+        self.exposure_sources.iter().any(|c| c == code)
+    }
+
+    pub fn set_source(&mut self, code: &str, on: bool) {
+        if code == Self::PWNED_CODE {
+            self.breach_check = on;
+            return;
+        }
+        self.exposure_sources.retain(|c| c != code);
+        if on {
+            self.exposure_sources.push(code.to_string());
+            self.exposure_sources.sort();
+        }
     }
 
     /// Moves a vault to the top of the recent list.
@@ -254,6 +299,16 @@ mod tests {
         let loaded = Settings::load(&dir);
         assert_eq!(loaded.list_sort, SortOrder::Changed);
         assert_eq!(loaded.trash_days, 3650);
+        // Sources are off until turned on.
+        assert!(!loaded.source_on("xposedornot"));
+        let mut s = loaded.clone();
+        s.set_source("xposedornot", true);
+        s.set_source("xposedornot", true);
+        s.set_source(Settings::PWNED_CODE, true);
+        assert_eq!(s.exposure_sources, vec!["xposedornot".to_string()]);
+        assert!(s.breach_check && s.source_on(Settings::PWNED_CODE));
+        s.set_source("xposedornot", false);
+        assert!(!s.source_on("xposedornot"));
         std::fs::write(dir.join("settings.json"), "{{{").unwrap();
         assert_eq!(Settings::load(&dir), Settings::default());
         std::fs::remove_dir_all(&dir).unwrap();
@@ -285,6 +340,8 @@ mod tests {
                 "breach_check",
                 "clipboard_seconds",
                 "email_lookup_ack",
+                "exposure_recheck_days",
+                "exposure_sources",
                 "generator",
                 "generator_phrase",
                 "hide_from_capture",

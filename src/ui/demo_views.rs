@@ -26,6 +26,11 @@ fn select(main: &mut Main, title: &str) {
 
 /// The first screen for a view name given on the command line.
 pub fn initial_screen(view: &str, sh: &mut Shared) -> Screen {
+    // The demo has some online sources switched on (it never goes online).
+    for code in crate::demo::DEMO_SOURCES {
+        sh.settings.set_source(code, true);
+    }
+    sh.settings.breach_check = true;
     sh.settings.recent = vec![
         RecentVault {
             path: crate::demo::DEMO_PATH.into(),
@@ -69,15 +74,70 @@ pub fn initial_screen(view: &str, sh: &mut Shared) -> Screen {
             main.nav = Nav::Health;
             main.demo_online_results();
         }
-        "breach" => {
-            main.nav = Nav::Breach;
+        "breach" | "exposure" => {
+            main.nav = Nav::Exposure;
             main.demo_online_results();
-            main.pages.email_input = crate::demo::DEMO_EMAIL.into();
+            main.exp.input = crate::demo::DEMO_EMAIL.into();
+            main.exp.selected = Some((
+                crate::exposure::QueryKind::Email,
+                crate::demo::DEMO_EMAIL.into(),
+            ));
+        }
+        "exposure-results" => {
+            main.nav = Nav::Exposure;
+            main.demo_online_results();
+            main.exp.selected = Some((
+                crate::exposure::QueryKind::Email,
+                crate::demo::DEMO_EMAIL.into(),
+            ));
+            main.exp.scroll_to_results = true;
+        }
+        "exposure-username" => {
+            main.nav = Nav::Exposure;
+            main.demo_online_results();
+            main.exp.tab = super::exposure::Tab::Lookup(crate::exposure::QueryKind::Username);
+            main.exp.input = "alex_m".into();
+            main.exp.own_username = true;
+            main.exp.selected = Some((crate::exposure::QueryKind::Username, "alex_m".into()));
+            main.exp.scroll_to_results = true;
+        }
+        "exposure-domain" => {
+            main.nav = Nav::Exposure;
+            main.demo_online_results();
+            main.exp.tab = super::exposure::Tab::Lookup(crate::exposure::QueryKind::Domain);
+        }
+        "exposure-password" => {
+            main.nav = Nav::Exposure;
+            main.exp.tab = super::exposure::Tab::Password;
+            main.exp.pw_results = vec![
+                (
+                    crate::exposure::password::PwSource::PwnedPasswords,
+                    Ok(10_434_004),
+                ),
+                (
+                    crate::exposure::password::PwSource::XposedOrNot,
+                    Ok(9_545_824),
+                ),
+            ];
         }
         "dialog-online" => {
-            main.nav = Nav::Breach;
+            // As on first use: nothing switched on yet.
+            sh.settings.exposure_sources.clear();
+            main.nav = Nav::Exposure;
+            let what = super::exposure::Pending::Lookup(
+                vec![crate::exposure::Task {
+                    kind: crate::exposure::QueryKind::Email,
+                    value: crate::demo::DEMO_EMAIL.into(),
+                }],
+                false,
+            );
+            let picks = what
+                .candidates()
+                .iter()
+                .map(|(code, _, _)| (*code, matches!(*code, "xposedornot" | "leakcheck")))
+                .collect();
             main.dialog = Some(super::dialogs::Dialog::Online(
-                super::dialogs::Online::Emails(vec![crate::demo::DEMO_EMAIL.into()]),
+                super::dialogs::Online::Sources(what, picks),
                 false,
             ));
         }
@@ -87,6 +147,10 @@ pub fn initial_screen(view: &str, sh: &mut Shared) -> Screen {
         }
         "authenticator" => main.nav = Nav::Authenticator,
         "settings" => main.nav = Nav::Settings,
+        "settings-online" => {
+            main.nav = Nav::Settings;
+            main.pages.scroll_online = true;
+        }
         "trash" => main.nav = Nav::Trash,
         v if v.starts_with("tools") => {
             main.nav = Nav::Tools;
